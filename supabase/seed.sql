@@ -1,0 +1,2 @@
+-- Seed data arrives with Milestone 3 (providers + models metadata).
+-- Intentionally empty in Milestone 1 (PRD rule 18: no premature implementation).

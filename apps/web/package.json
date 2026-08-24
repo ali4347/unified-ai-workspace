@@ -1,0 +1,35 @@
+{
+  "name": "@uaw/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/ssr": "0.x",
+    "@supabase/supabase-js": "2.x",
+    "@uaw/types": "workspace:*",
+    "class-variance-authority": "0.x",
+    "clsx": "2.x",
+    "lucide-react": "0.x",
+    "next": "15.x",
+    "react": "19.x",
+    "react-dom": "19.x",
+    "tailwind-merge": "3.x"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "3.x",
+    "@tailwindcss/postcss": "4.x",
+    "@types/node": "24.x",
+    "@types/react": "19.x",
+    "@types/react-dom": "19.x",
+    "eslint": "9.x",
+    "eslint-config-next": "15.x",
+    "tailwindcss": "4.x",
+    "typescript": "5.x"
+  }
+}
