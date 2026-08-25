@@ -5,7 +5,7 @@ import type { ProviderEventType, ProviderSlug } from "@uaw/types";
  * subscribes and persists events; adapters and the registry emit them.
  */
 export interface ProviderEvent {
-  type: ProviderEventType | "provider_switched";
+  type: ProviderEventType | "provider_switched" | "context_handoff";
   provider: ProviderSlug;
   detail?: Record<string, string>;
 }

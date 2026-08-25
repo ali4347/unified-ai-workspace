@@ -178,6 +178,19 @@ export async function updateConversationSelection(
   return error ? { error: error.message } : {};
 }
 
+/** Persists the rolling conversation summary (PRD §12, M8). */
+export async function updateConversationSummary(
+  conversationId: string,
+  summary: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("conversations")
+    .update({ summary: summary.slice(0, 8_000) || null })
+    .eq("id", conversationId);
+  return error ? { error: error.message } : {};
+}
+
 export async function renameConversation(
   conversationId: string,
   title: string

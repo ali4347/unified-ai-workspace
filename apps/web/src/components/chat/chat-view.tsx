@@ -17,12 +17,14 @@ import type { UiChatMessage } from "@/lib/chat/types";
 import {
   buildManualPackage,
   buildProviderContext,
+  rollingSummary,
 } from "@/lib/chat/context";
 import {
   createConversation,
   logProviderEvent,
   saveMessage,
   updateConversationSelection,
+  updateConversationSummary,
 } from "@/lib/chat/actions";
 import { CatalogProvider } from "@/components/providers/catalog-context";
 import { AiSelector } from "@/components/providers/ai-selector";
@@ -81,6 +83,7 @@ export function ChatView({
     initialConversationId ?? null
   );
   const abortRef = React.useRef<AbortController | null>(null);
+  const lastSummaryRef = React.useRef<string>("");
 
   React.useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -180,6 +183,46 @@ export function ChatView({
     );
   };
 
+  /** Rolling summary maintenance (PRD §12): recompute after each completed
+   * turn; persist only when it changes. */
+  const maintainSummary = (finalMessages: UiChatMessage[]) => {
+    if (!conversationIdRef.current) return;
+    const summary = rollingSummary(finalMessages);
+    if (summary === lastSummaryRef.current) return;
+    lastSummaryRef.current = summary;
+    persist(() =>
+      updateConversationSummary(conversationIdRef.current as string, summary)
+    );
+  };
+
+  /** Logs a context_handoff event when this send targets a different
+   * provider than the previous assistant reply (PRD §11, M8). */
+  const logHandoffIfSwitched = (
+    requestSelection: ProviderSelection,
+    context: { strategy: string; includedMessages: number; summaryChars: number },
+    history: UiChatMessage[]
+  ) => {
+    const lastAssistant = [...history]
+      .reverse()
+      .find((m) => m.role === "assistant" && m.selection);
+    if (
+      lastAssistant?.selection &&
+      lastAssistant.selection.providerSlug !== requestSelection.providerSlug
+    ) {
+      registry.events.emit({
+        type: "context_handoff",
+        provider: requestSelection.providerSlug,
+        detail: {
+          from: lastAssistant.selection.providerSlug,
+          to: requestSelection.providerSlug,
+          strategy: context.strategy,
+          included_messages: String(context.includedMessages),
+          summary_chars: String(context.summaryChars),
+        },
+      });
+    }
+  };
+
   const send = async (text: string) => {
     setSaveError(null);
     const requestSelection = selection;
@@ -223,6 +266,13 @@ export function ChatView({
         })
       );
     }
+
+    const context = buildProviderContext({
+      history,
+      prompt: text,
+      projectInstructions,
+    });
+    logHandoffIfSwitched(requestSelection, context, history);
 
     // ---- Manual mode: the USER performs the provider interaction (PRD §7).
     if (account?.integrationMode === "manual") {
@@ -280,13 +330,21 @@ export function ChatView({
         selection: requestSelection,
         integration,
       });
+      if (status === "completed") {
+        maintainSummary([
+          ...history,
+          userMessage,
+          {
+            id: assistantId,
+            role: "assistant",
+            content,
+            status,
+            selection: requestSelection,
+            createdAt: Date.now(),
+          },
+        ]);
+      }
     };
-
-    const context = buildProviderContext({
-      history,
-      prompt: text,
-      projectInstructions,
-    });
 
     let emitted = "";
     try {
@@ -337,6 +395,13 @@ export function ChatView({
       selection: manualState.selection,
       integration: "manual",
     });
+    maintainSummary(
+      messages.map((m) =>
+        m.id === manualState.assistantId
+          ? { ...m, content: reply, status: "completed" as const }
+          : m
+      )
+    );
     setManualState(null);
   };
 

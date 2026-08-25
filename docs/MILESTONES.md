@@ -11,8 +11,8 @@ Source: [PRD.md §60](PRD.md). One milestone at a time (PRD rules 2, 18). Commit
 | 5 | Browser Extension Foundation | ✅ Done (2026-08-25) | `apps/extension`: MV3, service worker, origin-validated messaging, allowlist, tab-presence detection only; portal status card |
 | 6 | First Provider Proof of Concept | ✅ Done (2026-08-25) | Claude via `manual` + optional `official_api` (user key, browser-held); compliance record in PROVIDER_ADAPTERS.md |
 | 7 | Second Provider | ✅ Done (2026-08-25) | ChatGPT via the same approved modes; Claude ↔ ChatGPT switching inside one Master Conversation |
-| 8 | Context Handoff | ⬜ Next | Strategies A–D, rolling summaries, switch events |
-| 9 | Production Hardening | ⬜ | Monitoring, retries, security review, indexes |
+| 8 | Context Handoff | ✅ Done (2026-08-25) | Automatic strategies A–D, deterministic rolling summaries persisted per conversation, context_handoff events |
+| 9 | Production Hardening | ⬜ Next | Monitoring, retries, security review, indexes |
 | 10 | Deployment | ⬜ | Vercel + Supabase + GitHub |
 
 ## Milestone 1 — delivered scope
@@ -83,6 +83,14 @@ Acceptance criteria (PRD §55): sign-in/sign-out and route protection are implem
 - `/api/providers/chatgpt`: OpenAI Chat Completions proxy — raw fetch + SSE re-streaming (no SDK dependency), same shared plumbing (portal auth, rate limit, validation, normalized errors), user key browser-held per request
 - Migration: `providers.integration_type='manual'` for chatgpt; `models.capabilities.api_model` → `gpt-5.1` / `gpt-5.1-mini` (update via migration if OpenAI renames)
 - PRD §58 provider-switching criteria satisfied end-to-end: Provider A messages → switch in header → Provider B receives the built context (system note + full history) and continues; every reply records provider/model/account and mode
+
+## Milestone 8 — delivered scope
+
+- Context Handoff Engine (`lib/chat/context.ts`): automatic strategy selection (PRD §11) — `full_history` (A) while everything fits the ~24k-token budget, otherwise recent window by token budget (B) plus an extractive summary (C); project instructions always join the system prompt when present (D)
+- Rolling summary (PRD §12): deterministic digest of the folded prefix, recomputed after each completed turn, persisted to `conversations.summary` only on change — no model API required (PRD §6)
+- Manual-mode packages use the same strategy engine (summary + recent window instead of unbounded transcripts)
+- `context_handoff` provider event logged whenever a send targets a different provider than the previous assistant reply, with strategy/message-count/summary-size metadata
+- Token estimation: chars/4, conservative and provider-agnostic
 
 ## Milestone 6 compliance gate (resolved)
 
