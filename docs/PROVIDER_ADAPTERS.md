@@ -1,6 +1,6 @@
 # Provider adapters
 
-Adapters are the only place provider-specific logic may live (PRD rules 6, 12). The rest of the app talks to the common interface and the registry. Implementation lands in `packages/provider-core` at Milestone 4 (mock adapters first).
+Adapters are the only place provider-specific logic may live (PRD rules 6, 12). The rest of the app talks to the common interface and the registry, both implemented in `packages/provider-core` (Milestone 4). Streaming uses an `onChunk` callback; cancellation uses `AbortSignal`.
 
 ## Common interface (PRD §25)
 
@@ -44,7 +44,7 @@ The registry maps slug → `{ enabled, integrationStatus, adapter }`. UI reads t
 
 | Provider | Status | Planned milestone | Notes |
 | --- | --- | --- | --- |
-| Mock | — | M4 | Drives all UI development; clearly labeled, never impersonates a real provider |
+| Mock | active (M4 ✅) | M4 | `MockAdapter` in provider-core drives all UI development; clearly labeled, never impersonates a real provider |
 | Claude | `disabled` | M6/M7 | Compliant mode TBD at the M6 gate: `official_api` or `manual` (consumer-site automation is not permitted by current Anthropic consumer terms) |
 | ChatGPT | `disabled` | M6/M7 | Same gate; OpenAI consumer terms likewise prohibit automated access to chatgpt.com |
 | Gemini | `disabled` | Phase 2 | — |

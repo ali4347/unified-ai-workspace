@@ -7,13 +7,14 @@ This document describes what is actually implemented. The target architecture li
 pnpm workspaces:
 
 ```text
-apps/web            @uaw/web    — Next.js portal
-packages/types      @uaw/types  — shared TypeScript types (consumed as source via transpilePackages)
-supabase/           migrations + seed (applied to the hosted Supabase project)
-docs/               product + engineering docs
+apps/web                @uaw/web           — Next.js portal
+packages/types          @uaw/types         — shared TypeScript types (TS source via transpilePackages)
+packages/provider-core  @uaw/provider-core — adapter interface, registry, events, errors, mock adapter
+supabase/               migrations + seed (applied to the hosted Supabase project)
+docs/                   product + engineering docs
 ```
 
-Packages planned but intentionally not created yet (their milestones): `apps/extension` (M5), `packages/provider-core` (M4), `packages/ui`, `packages/config`, `packages/utils` (when first needed).
+Packages planned but intentionally not created yet (their milestones): `apps/extension` (M5), `packages/ui`, `packages/config`, `packages/utils` (when first needed).
 
 ## Web app (apps/web)
 
@@ -46,10 +47,11 @@ src/lib/
   env.ts                      → isSupabaseConfigured()
   db/database.types.ts        → hand-written typed schema for supabase-js
   db/queries.ts               → RSC reads (catalog data, recents, conversation+messages, projects)
-  chat/actions.ts             → server actions: conversation/message CRUD, selection, search
+  chat/actions.ts             → server actions: conversation/message CRUD, selection, events, search
+  chat/types.ts               → UiChatMessage (chat UI state shape)
   projects/actions.ts         → server actions: project CRUD
   providers/catalog.ts        → catalog built from DB rows (+ static fallback pre-migration)
-  providers/mock-chat.ts      → mock reply engine, simulated cancellable streaming (→ M4)
+  providers/registry.ts       → ProviderRegistry from catalog (mock adapters until M6)
   supabase/client.ts          → createBrowserClient<Database>
   supabase/server.ts          → createServerClient<Database> over next/headers cookies (async)
   supabase/middleware.ts      → updateSession(): session refresh + route protection
@@ -95,6 +97,8 @@ Login page
 | Messages persist on completion (user at send, assistant at finish/stop) | Mock streaming is client-side; a mid-stream navigation loses only the unfinished mock reply |
 | Search = ILIKE over titles/contents/project names | PRD §38 initial scope; trigram/tsvector indexes can come with M9 if needed |
 | Hand-written `Database` type (type aliases, not interfaces) | supabase-js needs implicit index signatures; `supabase gen types` can replace it later |
+| Adapter streaming = `onChunk` callback + AbortSignal | Matches PRD §25 promise shape while supporting §34 incremental output and §22 stop |
+| Registry built client-side from the catalog | Chat runs in the browser against mock adapters; M6 server modes slot in behind the same interface |
 
 ## Deployment
 

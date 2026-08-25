@@ -12,6 +12,7 @@
   "dependencies": {
     "@supabase/ssr": "0.x",
     "@supabase/supabase-js": "2.x",
+    "@uaw/provider-core": "workspace:*",
     "@uaw/types": "workspace:*",
     "class-variance-authority": "0.x",
     "clsx": "2.x",

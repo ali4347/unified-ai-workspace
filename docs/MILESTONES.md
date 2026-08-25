@@ -7,8 +7,8 @@ Source: [PRD.md §60](PRD.md). One milestone at a time (PRD rules 2, 18). Commit
 | 1 | Foundation | ✅ Done (2026-08-24) | Monorepo, Next.js, Tailwind v4, shadcn base, Supabase clients, env config, auth (Google + magic link), protected dashboard, profiles table + RLS. Verified in production 2026-08-25 (Google OAuth + Supabase live at https://unified-ai-workspace-web.vercel.app) |
 | 2 | Core UI | ✅ Done (2026-08-25) | App shell polish, chat header, provider/model/account selectors, composer, message list with provider badges + switch dividers, theme switcher — all on mock providers |
 | 3 | Database | ✅ Done (2026-08-25) | Full schema migration + RLS + seeds + storage policies; conversation/message persistence; recents, rename/archive/delete, search; project CRUD |
-| 4 | Provider Core | ⬜ Next | `packages/provider-core`: adapter interface, registry, connection state, normalized errors, provider events, mock adapters |
-| 5 | Browser Extension Foundation | ⬜ | `apps/extension`: MV3, service worker, secure messaging, allowlist, connection status only |
+| 4 | Provider Core | ✅ Done (2026-08-25) | `packages/provider-core`: adapter interface, registry, event bus, normalized errors, mock adapter; chat wired through the registry |
+| 5 | Browser Extension Foundation | ⬜ Next | `apps/extension`: MV3, service worker, secure messaging, allowlist, connection status only |
 | 6 | First Provider Proof of Concept | ⬜ | **Compliance gate** — see below |
 | 7 | Second Provider | ⬜ | Provider A → Master Conversation → Provider B |
 | 8 | Context Handoff | ⬜ | Strategies A–D, rolling summaries, switch events |
@@ -50,6 +50,13 @@ Acceptance criteria (PRD §55): sign-in/sign-out and route protection are implem
 - Provider/model catalog now database-built (fallback static catalog keeps the app usable pre-migration); accounts come from `connected_accounts` (none until M6)
 - Hand-written typed `Database` schema for supabase-js
 - **Note:** the migration must be applied to the hosted Supabase project (`supabase db push` or SQL Editor) — scheduled with the final deployment step (M10)
+
+## Milestone 4 — delivered scope
+
+- `packages/provider-core` (`@uaw/provider-core`, TS source via transpilePackages): `AIProviderAdapter` interface (PRD §25) with AbortSignal cancellation + `onChunk` streaming, `ProviderRegistry` (PRD §26, lazy adapter factories), `ProviderAdapterError` + `providerError()` normalized errors (PRD §47), `ProviderEventBus`
+- `MockAdapter`: clearly-labeled simulated replies/streaming (PRD §34); the only adapter — no website-specific automation anywhere (M4 requirement)
+- Web: `lib/providers/registry.ts` builds the registry from the catalog; ChatView sends through `adapter.sendMessage` (stop = abort), `failed` message state, provider events (`provider_switched`, `model_changed`, `request_failed`) persist to `provider_events` via the event bus
+- Integration status stays `disabled` for every real provider pending the M6 gate
 
 ## Milestone 6 compliance gate
 

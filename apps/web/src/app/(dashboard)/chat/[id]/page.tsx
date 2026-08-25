@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import type { UiChatMessage } from "@/lib/providers/mock-chat";
+import type { UiChatMessage } from "@/lib/chat/types";
 import { ChatView } from "@/components/chat/chat-view";
 import {
   getCatalogData,

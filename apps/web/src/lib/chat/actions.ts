@@ -5,6 +5,7 @@ import type {
   MessageRole,
   MessageStatus,
   ProviderSelection,
+  ProviderSlug,
 } from "@uaw/types";
 import { createClient } from "@/lib/supabase/server";
 
@@ -209,6 +210,34 @@ export async function deleteConversation(
     .delete()
     .eq("id", conversationId);
   if (!error) revalidatePath("/", "layout");
+  return error ? { error: error.message } : {};
+}
+
+/** Persists a provider event (PRD §31 provider_events, M4 event bus). */
+export async function logProviderEvent(input: {
+  providerSlug: ProviderSlug;
+  eventType: string;
+  conversationId?: string | null;
+  metadata?: Record<string, string>;
+}): Promise<{ error?: string }> {
+  const eventType = input.eventType.slice(0, 64);
+  const supabase = await createClient();
+  const userId = await requireUser(supabase);
+  if (!userId) return { error: "Not signed in" };
+
+  const { data: provider } = await supabase
+    .from("providers")
+    .select("id")
+    .eq("slug", input.providerSlug)
+    .maybeSingle();
+
+  const { error } = await supabase.from("provider_events").insert({
+    user_id: userId,
+    provider_id: provider?.id ?? null,
+    conversation_id: input.conversationId ?? null,
+    event_type: eventType,
+    metadata: input.metadata ?? {},
+  });
   return error ? { error: error.message } : {};
 }
 

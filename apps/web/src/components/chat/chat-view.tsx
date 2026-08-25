@@ -4,18 +4,18 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { FolderKanban } from "lucide-react";
 import { PROVIDERS, type ProviderSelection } from "@uaw/types";
+import { isProviderError } from "@uaw/provider-core";
 import {
-  getEntry,
+  getAccount,
   getModel,
   selectionForModel,
   type Catalog,
 } from "@/lib/providers/catalog";
-import {
-  streamMockReply,
-  type UiChatMessage,
-} from "@/lib/providers/mock-chat";
+import { createRegistryFromCatalog } from "@/lib/providers/registry";
+import type { UiChatMessage } from "@/lib/chat/types";
 import {
   createConversation,
+  logProviderEvent,
   saveMessage,
   updateConversationSelection,
 } from "@/lib/chat/actions";
@@ -29,8 +29,8 @@ import { cn } from "@/lib/utils";
 /**
  * The Master Conversation view: chat header with provider/model/account
  * selectors, message list and composer. Messages persist through the chat
- * actions (Milestone 3); replies come from the mock engine until the
- * adapter registry (Milestone 4) and real integrations (Milestone 6).
+ * actions (M3); replies flow through the provider registry (M4) — mock
+ * adapters until real integrations pass the M6 compliance gate.
  */
 export function ChatView({
   catalog,
@@ -48,6 +48,10 @@ export function ChatView({
   projectName?: string;
 }>) {
   const router = useRouter();
+  const registry = React.useMemo(
+    () => createRegistryFromCatalog(catalog),
+    [catalog]
+  );
   const [selection, setSelection] =
     React.useState<ProviderSelection>(initialSelection);
   const [messages, setMessages] = React.useState<UiChatMessage[]>(
@@ -58,16 +62,44 @@ export function ChatView({
   const conversationIdRef = React.useRef<string | null>(
     initialConversationId ?? null
   );
-  const cancelRef = React.useRef<(() => void) | null>(null);
+  const abortRef = React.useRef<AbortController | null>(null);
 
-  React.useEffect(() => () => cancelRef.current?.(), []);
+  React.useEffect(() => () => abortRef.current?.abort(), []);
+
+  /** Persists fire-and-forget; failures surface as a notice, never block UI. */
+  const persist = React.useCallback(
+    (work: () => Promise<{ error?: string }>) => {
+      work()
+        .then((result) => {
+          if (result.error) setSaveError(result.error);
+        })
+        .catch(() => setSaveError("Could not reach the server"));
+    },
+    []
+  );
+
+  // Provider event bus → provider_events table (PRD §31).
+  React.useEffect(
+    () =>
+      registry.events.on((event) => {
+        persist(() =>
+          logProviderEvent({
+            providerSlug: event.provider,
+            eventType: event.type,
+            conversationId: conversationIdRef.current,
+            metadata: event.detail,
+          })
+        );
+      }),
+    [registry, persist]
+  );
 
   // "New chat" clicked while already on /chat (no router navigation happens
   // because the URL only changed via history.replaceState) — reset in place.
   React.useEffect(() => {
     const reset = () => {
-      cancelRef.current?.();
-      cancelRef.current = null;
+      abortRef.current?.abort();
+      abortRef.current = null;
       conversationIdRef.current = null;
       setMessages([]);
       setStreamingId(null);
@@ -83,15 +115,6 @@ export function ChatView({
     setMessages((prev) =>
       prev.map((m) => (m.id === id ? { ...m, ...patch } : m))
     );
-  };
-
-  /** Persists fire-and-forget; failures surface as a notice, never block UI. */
-  const persist = (work: () => Promise<{ error?: string }>) => {
-    work()
-      .then((result) => {
-        if (result.error) setSaveError(result.error);
-      })
-      .catch(() => setSaveError("Could not reach the server"));
   };
 
   const ensureConversation = async (
@@ -120,6 +143,17 @@ export function ChatView({
 
   const send = async (text: string) => {
     setSaveError(null);
+    const requestSelection = selection;
+    const model = getModel(
+      catalog,
+      requestSelection.providerSlug,
+      requestSelection.modelId
+    );
+    if (!model) {
+      setSaveError("Selected model is unavailable");
+      return;
+    }
+
     const userMessage: UiChatMessage = {
       id: crypto.randomUUID(),
       role: "user",
@@ -133,14 +167,18 @@ export function ChatView({
       role: "assistant",
       content: "",
       status: "streaming",
-      selection,
+      selection: requestSelection,
       createdAt: Date.now(),
     };
+
+    const history = [...messages, userMessage]
+      .filter((m) => m.content.length > 0)
+      .map((m) => ({ role: m.role, content: m.content }));
 
     setMessages((prev) => [...prev, userMessage, assistantMessage]);
     setStreamingId(assistantId);
 
-    // Conversation + user message persist while the mock reply streams.
+    // Conversation + user message persist while the reply streams.
     const conversationId = await ensureConversation(text);
     if (conversationId) {
       persist(() =>
@@ -154,75 +192,88 @@ export function ChatView({
       );
     }
 
-    const finishedSelection = selection;
-    const entry = getEntry(catalog, selection.providerSlug);
-    const model = getModel(catalog, selection.providerSlug, selection.modelId);
+    const finish = (content: string, status: UiChatMessage["status"]) => {
+      patchMessage(assistantId, { content, status });
+      setStreamingId(null);
+      abortRef.current = null;
+      if (conversationIdRef.current) {
+        persist(() =>
+          saveMessage({
+            id: assistantId,
+            conversationId: conversationIdRef.current as string,
+            role: "assistant",
+            content,
+            status,
+            selection: requestSelection,
+          })
+        );
+      }
+    };
 
-    cancelRef.current = streamMockReply(
-      { providerName: entry.meta.name, modelName: model?.name ?? "model" },
-      text,
-      {
+    let emitted = "";
+    try {
+      const adapter = registry.getAdapter(requestSelection.providerSlug);
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      const response = await adapter.sendMessage({
+        messages: history,
+        model,
+        account: getAccount(
+          catalog,
+          requestSelection.providerSlug,
+          requestSelection.accountId
+        ),
+        signal: controller.signal,
         onChunk: (chunk) => {
+          emitted += chunk;
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantId ? { ...m, content: m.content + chunk } : m
             )
           );
         },
-        onComplete: () => {
-          setStreamingId(null);
-          cancelRef.current = null;
-          setMessages((prev) => {
-            const finished = prev.find((m) => m.id === assistantId);
-            if (finished && conversationIdRef.current) {
-              persist(() =>
-                saveMessage({
-                  id: assistantId,
-                  conversationId: conversationIdRef.current as string,
-                  role: "assistant",
-                  content: finished.content,
-                  status: "completed",
-                  selection: finishedSelection,
-                })
-              );
-            }
-            return prev.map((m) =>
-              m.id === assistantId ? { ...m, status: "completed" } : m
-            );
-          });
+      });
+      finish(response.content, response.status);
+    } catch (error) {
+      registry.events.emit({
+        type: "request_failed",
+        provider: requestSelection.providerSlug,
+        detail: {
+          code: isProviderError(error) ? error.code : "NETWORK_ERROR",
         },
-      }
-    );
+      });
+      finish(emitted, "failed");
+      setSaveError(
+        isProviderError(error) ? error.message : "Provider request failed"
+      );
+    }
   };
 
   const stop = () => {
-    cancelRef.current?.();
-    cancelRef.current = null;
-    if (streamingId) {
-      const stopped = messages.find((m) => m.id === streamingId);
-      patchMessage(streamingId, { status: "cancelled" });
-      if (conversationIdRef.current) {
-        persist(() =>
-          saveMessage({
-            id: streamingId,
-            conversationId: conversationIdRef.current as string,
-            role: "assistant",
-            content: stopped?.content ?? "",
-            status: "cancelled",
-            selection: stopped?.selection ?? selection,
-          })
-        );
-      }
-    }
-    setStreamingId(null);
+    abortRef.current?.abort();
   };
 
   const changeSelection = (next: ProviderSelection) => {
+    const previous = selection;
     setSelection(next);
     if (conversationIdRef.current) {
       persist(() =>
         updateConversationSelection(conversationIdRef.current as string, next)
       );
+    }
+    if (previous.providerSlug !== next.providerSlug) {
+      registry.events.emit({
+        type: "provider_switched",
+        provider: next.providerSlug,
+        detail: { from: previous.providerSlug, to: next.providerSlug },
+      });
+    } else if (previous.modelId !== next.modelId) {
+      registry.events.emit({
+        type: "model_changed",
+        provider: next.providerSlug,
+        detail: { from: previous.modelId, to: next.modelId },
+      });
     }
   };
 
@@ -260,8 +311,7 @@ export function ChatView({
 
         {saveError && (
           <p className="mx-auto w-full max-w-3xl px-4 text-xs text-destructive">
-            Saving failed: {saveError}. Messages stay visible but may not be
-            stored.
+            {saveError}
           </p>
         )}
 

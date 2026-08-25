@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { ArrowLeftRight, Check, Copy } from "lucide-react";
-import type { UiChatMessage } from "@/lib/providers/mock-chat";
+import type { UiChatMessage } from "@/lib/chat/types";
 import { useCatalog } from "@/components/providers/catalog-context";
 import { ProviderBadge } from "@/components/providers/provider-badge";
 import { Button } from "@/components/ui/button";
@@ -103,6 +103,9 @@ function AssistantMessage({ message }: Readonly<{ message: UiChatMessage }>) {
       <div className="flex h-7 items-center gap-2">
         {message.status === "cancelled" && (
           <span className="text-xs text-muted-foreground">Stopped</span>
+        )}
+        {message.status === "failed" && (
+          <span className="text-xs text-destructive">Failed</span>
         )}
         {message.status === "completed" && (
           <CopyButton content={message.content} />

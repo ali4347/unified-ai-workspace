@@ -16,6 +16,9 @@ importers:
       '@supabase/supabase-js':
         specifier: 2.x
         version: 2.112.4
+      '@uaw/provider-core':
+        specifier: workspace:*
+        version: link:../../packages/provider-core
       '@uaw/types':
         specifier: workspace:*
         version: link:../../packages/types
@@ -65,6 +68,16 @@ importers:
       tailwindcss:
         specifier: 4.x
         version: 4.3.3
+      typescript:
+        specifier: 5.x
+        version: 5.9.3
+
+  packages/provider-core:
+    dependencies:
+      '@uaw/types':
+        specifier: workspace:*
+        version: link:../types
+    devDependencies:
       typescript:
         specifier: 5.x
         version: 5.9.3
