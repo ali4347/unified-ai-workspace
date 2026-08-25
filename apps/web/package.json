@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.x",
     "@supabase/ssr": "0.x",
     "@supabase/supabase-js": "2.x",
     "@uaw/provider-core": "workspace:*",

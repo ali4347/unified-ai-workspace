@@ -17,5 +17,9 @@ export {
   providerError,
 } from "./errors";
 export { ProviderEventBus, type ProviderEvent } from "./events";
+export {
+  HttpStreamAdapter,
+  type HttpStreamAdapterConfig,
+} from "./http-adapter";
 export { MockAdapter, type MockAdapterConfig } from "./mock-adapter";
 export { ProviderRegistry, type ProviderRegistration } from "./registry";

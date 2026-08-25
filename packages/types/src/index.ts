@@ -55,6 +55,13 @@ export interface ModelInfo {
   description?: string;
 }
 
+/** Per-account compliant integration mode (M6 gate; PRD §7):
+ * - `manual`: the user performs the provider interaction; the app builds the
+ *   context package and persists the workflow. Zero credentials.
+ * - `official_api`: official provider API with a user-supplied key that is
+ *   held in the user's browser only — never stored server-side. */
+export type IntegrationMode = "manual" | "official_api";
+
 /** A connected provider account as shown in selectors (PRD §16).
  * Metadata only — never credentials (PRD §19). */
 export interface ProviderAccountInfo {
@@ -62,6 +69,7 @@ export interface ProviderAccountInfo {
   providerSlug: ProviderSlug;
   email: string;
   status: ProviderConnectionState;
+  integrationMode?: IntegrationMode;
 }
 
 /** The active provider/model/account of a conversation (PRD §15–16, §31).

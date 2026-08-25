@@ -90,7 +90,12 @@ function UserMessage({ message }: Readonly<{ message: UiChatMessage }>) {
 function AssistantMessage({ message }: Readonly<{ message: UiChatMessage }>) {
   return (
     <div className="group flex flex-col gap-1.5">
-      {message.selection && <ProviderBadge selection={message.selection} />}
+      {message.selection && (
+        <ProviderBadge
+          selection={message.selection}
+          integration={message.integration}
+        />
+      )}
       <div className="whitespace-pre-wrap text-sm leading-relaxed">
         {message.content}
         {message.status === "streaming" && (

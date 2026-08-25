@@ -20,6 +20,12 @@ Binding rules from PRD §5, §7, §19, §32, §48, §59, §61–62. Violations b
 
 Never log: passwords, auth cookies, tokens, full provider sessions. Log instead: request id, provider, model, duration, status, error code (PRD §48). Analytics must not capture prompt content unless explicitly required (§49).
 
+## User-supplied API keys (`official_api` mode, M6+)
+
+- Keys are stored **only in the user's browser** (localStorage) and sent as a per-request header to our same-origin proxy route, which forwards them to the official provider API. No database column, no server-side persistence, no logging of the key or its presence.
+- Proxy routes require a signed-in portal user (never an open relay), enforce per-user rate limits and payload caps, and map provider errors to normalized codes with generic messages (no key material, no prompt content).
+- Disconnecting an API-key account clears the key from the browser.
+
 ## Compliance policy (provider integrations)
 
 Integration statuses: `supported | experimental | disabled | manual | official_api` (PRD §7). No adapter may steal cookies, request/store AI passwords, bypass rate/usage limits, defeat CAPTCHA, or circumvent provider protections — these are product non-goals (§5) and hard development rules (§61.13).

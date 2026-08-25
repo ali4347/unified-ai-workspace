@@ -33,14 +33,27 @@ export default async function ConversationPage({
     ? await getProject(conversation.project_id)
     : null;
 
-  const initialMessages: UiChatMessage[] = messages.map((row) => ({
-    id: row.id,
-    role: row.role,
-    content: row.content,
-    status: row.status,
-    selection: selectionFromIds(data, row),
-    createdAt: Date.parse(row.created_at),
-  }));
+  const initialMessages: UiChatMessage[] = messages.map((row) => {
+    const metadata =
+      row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+        ? (row.metadata as { integration?: unknown })
+        : {};
+    const integration = metadata.integration;
+    return {
+      id: row.id,
+      role: row.role,
+      content: row.content,
+      status: row.status,
+      selection: selectionFromIds(data, row),
+      integration:
+        integration === "mock" ||
+        integration === "manual" ||
+        integration === "official_api"
+          ? integration
+          : undefined,
+      createdAt: Date.parse(row.created_at),
+    };
+  });
 
   const initialSelection =
     selectionFromIds(data, {
@@ -60,6 +73,7 @@ export default async function ConversationPage({
       initialMessages={initialMessages}
       projectId={project?.id}
       projectName={project?.name}
+      projectInstructions={project?.custom_instructions}
     />
   );
 }

@@ -1,4 +1,11 @@
+import type { IntegrationMode } from "@uaw/types";
 import { createClient } from "@/lib/supabase/server";
+import { getCatalogData } from "@/lib/db/queries";
+import {
+  ProviderAccounts,
+  type ConnectableProvider,
+  type ProviderAccountItem,
+} from "@/components/settings/provider-accounts";
 import {
   Card,
   CardContent,
@@ -14,11 +21,50 @@ export const metadata = {
   title: "Settings",
 };
 
+// Providers with a live official_api proxy route (kept in sync with
+// lib/providers/registry.ts PROXY_ENDPOINTS).
+const PROXIED_PROVIDERS = new Set(["claude"]);
+
 export default async function SettingsPage() {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  const catalogData = await getCatalogData();
+  const providerById = new Map(
+    catalogData.providers.map((p) => [p.id, p] as const)
+  );
+  const connectableProviders: ConnectableProvider[] = catalogData.providers
+    .filter((p) => p.status === "active")
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((p) => ({
+      slug: p.slug,
+      name: p.name,
+      connectable: p.integration_type !== "disabled",
+      hasProxy: PROXIED_PROVIDERS.has(p.slug),
+    }));
+  const accountItems: ProviderAccountItem[] = catalogData.accounts.flatMap(
+    (a) => {
+      const provider = providerById.get(a.provider_id);
+      if (!provider) return [];
+      const metadata =
+        a.metadata && typeof a.metadata === "object" && !Array.isArray(a.metadata)
+          ? (a.metadata as { mode?: unknown })
+          : {};
+      return [
+        {
+          id: a.id,
+          providerSlug: provider.slug,
+          email: a.email ?? a.display_name ?? "Unnamed account",
+          mode:
+            metadata.mode === "manual" || metadata.mode === "official_api"
+              ? (metadata.mode as IntegrationMode)
+              : undefined,
+        },
+      ];
+    }
+  );
 
   return (
     <div className="mx-auto w-full max-w-2xl flex-1 space-y-4 overflow-y-auto px-4 py-6">
@@ -48,10 +94,17 @@ export default async function SettingsPage() {
         <CardHeader>
           <CardTitle>AI providers</CardTitle>
           <CardDescription>
-            Connect Claude and ChatGPT accounts, pick defaults, and manage
-            connections — arrives with Milestone 6.
+            Connect provider accounts. Manual mode needs no credentials; API
+            key mode keeps your key in this browser only — never on our
+            servers.
           </CardDescription>
         </CardHeader>
+        <CardContent>
+          <ProviderAccounts
+            providers={connectableProviders}
+            accounts={accountItems}
+          />
+        </CardContent>
       </Card>
 
       <Card>

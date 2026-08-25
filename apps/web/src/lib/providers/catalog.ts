@@ -63,12 +63,21 @@ export function buildCatalog(data: CatalogData): Catalog {
         })),
       accounts: data.accounts
         .filter((a) => a.provider_id === provider.id)
-        .map((a) => ({
-          id: a.id,
-          providerSlug: provider.slug,
-          email: a.email ?? a.display_name ?? "Unnamed account",
-          status: a.status,
-        })),
+        .map((a) => {
+          const metadata =
+            a.metadata && typeof a.metadata === "object" && !Array.isArray(a.metadata)
+              ? a.metadata
+              : {};
+          const mode = (metadata as { mode?: unknown }).mode;
+          return {
+            id: a.id,
+            providerSlug: provider.slug,
+            email: a.email ?? a.display_name ?? "Unnamed account",
+            status: a.status,
+            integrationMode:
+              mode === "manual" || mode === "official_api" ? mode : undefined,
+          };
+        }),
     }));
 }
 

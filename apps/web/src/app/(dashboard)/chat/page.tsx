@@ -23,6 +23,7 @@ export default async function ChatPage({
       initialSelection={defaultSelection(catalog)}
       projectId={project?.id}
       projectName={project?.name}
+      projectInstructions={project?.custom_instructions}
     />
   );
 }

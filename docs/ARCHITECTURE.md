@@ -66,8 +66,15 @@ src/lib/
   chat/actions.ts             → server actions: conversation/message CRUD, selection, events, search
   chat/types.ts               → UiChatMessage (chat UI state shape)
   projects/actions.ts         → server actions: project CRUD
+  chat/context.ts             → provider context + manual handoff package (M8 adds strategies)
+  accounts/actions.ts         → server actions: connect/disconnect provider accounts (metadata only)
+  extension/client.ts         → postMessage client for the companion extension
   providers/catalog.ts        → catalog built from DB rows (+ static fallback pre-migration)
-  providers/registry.ts       → ProviderRegistry from catalog (mock adapters until M6)
+  providers/registry.ts       → registry with per-account routing: mock / official_api / manual
+  providers/key-store.ts      → browser-only localStorage for user API keys (never server-side)
+  providers/server/proxy.ts   → shared proxy plumbing (auth, rate limit, validation, model map)
+  providers/server/claude.ts  → server half of the Claude official_api adapter (Anthropic SDK)
+src/app/api/providers/claude  → POST proxy route (streaming; validate action)
   supabase/client.ts          → createBrowserClient<Database>
   supabase/server.ts          → createServerClient<Database> over next/headers cookies (async)
   supabase/middleware.ts      → updateSession(): session refresh + route protection
@@ -114,7 +121,9 @@ Login page
 | Search = ILIKE over titles/contents/project names | PRD §38 initial scope; trigram/tsvector indexes can come with M9 if needed |
 | Hand-written `Database` type (type aliases, not interfaces) | supabase-js needs implicit index signatures; `supabase gen types` can replace it later |
 | Adapter streaming = `onChunk` callback + AbortSignal | Matches PRD §25 promise shape while supporting §34 incremental output and §22 stop |
-| Registry built client-side from the catalog | Chat runs in the browser against mock adapters; M6 server modes slot in behind the same interface |
+| Registry built client-side from the catalog | Chat runs in the browser; per-account routing picks mock / official_api / manual behind the same interface |
+| `manual` mode short-circuits in the UI, not the adapter | `sendMessage` cannot model a user-mediated round trip; the handoff panel owns it (PRD §7 manual) |
+| User API keys in browser localStorage only, proxied per request | PRD §19 — nothing credential-like server-side; provider-specific server logic lives only in the proxy route (adapter server-half) |
 
 ## Deployment
 

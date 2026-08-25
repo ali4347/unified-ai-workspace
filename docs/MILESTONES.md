@@ -9,8 +9,8 @@ Source: [PRD.md §60](PRD.md). One milestone at a time (PRD rules 2, 18). Commit
 | 3 | Database | ✅ Done (2026-08-25) | Full schema migration + RLS + seeds + storage policies; conversation/message persistence; recents, rename/archive/delete, search; project CRUD |
 | 4 | Provider Core | ✅ Done (2026-08-25) | `packages/provider-core`: adapter interface, registry, event bus, normalized errors, mock adapter; chat wired through the registry |
 | 5 | Browser Extension Foundation | ✅ Done (2026-08-25) | `apps/extension`: MV3, service worker, origin-validated messaging, allowlist, tab-presence detection only; portal status card |
-| 6 | First Provider Proof of Concept | ⬜ Next | **Compliance gate resolved** — see below |
-| 7 | Second Provider | ⬜ | Provider A → Master Conversation → Provider B |
+| 6 | First Provider Proof of Concept | ✅ Done (2026-08-25) | Claude via `manual` + optional `official_api` (user key, browser-held); compliance record in PROVIDER_ADAPTERS.md |
+| 7 | Second Provider | ⬜ Next | ChatGPT, same approved modes; then Provider A → Master Conversation → Provider B |
 | 8 | Context Handoff | ⬜ | Strategies A–D, rolling summaries, switch events |
 | 9 | Production Hardening | ⬜ | Monitoring, retries, security review, indexes |
 | 10 | Deployment | ⬜ | Vercel + Supabase + GitHub |
@@ -68,7 +68,16 @@ Acceptance criteria (PRD §55): sign-in/sign-out and route protection are implem
 - Web: Settings → Browser extension card shows connection + provider tab status
 - Popup lists open provider tabs
 
-## Milestone 6 compliance gate
+## Milestone 6 — delivered scope
+
+- **Gate resolved** (2026-08-25, product owner): Claude integrates via `manual` (default, zero credentials) + optional `official_api` (user-supplied Anthropic key)
+- Manual mode: context package built from the Master Conversation (+ project instructions), copy → user pastes into claude.ai themselves → pastes the reply back; stored as a real Claude reply with a "manual" badge. Zero automation of the provider site
+- Official API mode: `HttpStreamAdapter` (provider-core) → `/api/providers/claude` proxy → official Anthropic SDK. Streaming replies; key from browser localStorage per request, never stored/logged server-side; portal-auth + per-user rate limit on the proxy; normalized error mapping; `claude-opus-5` uses Anthropic server-side refusal fallbacks
+- Model mapping migration: `models.capabilities.api_model` (`claude-sonnet-5`, `claude-opus-5`, `claude-haiku-4-5`); `providers.integration_type = 'manual'` for Claude
+- Settings → AI providers: connect (manual / API key with validation), list, disconnect; account selector shows mode chips; "Connect account" links to Settings
+- Messages record how they were produced (`metadata.integration`: mock / manual / official_api); badges label mock and manual replies; mock notice only when no account is selected
+
+## Milestone 6 compliance gate (resolved)
 
 PRD §7 requires every adapter be reviewed against the provider's current terms **before** production release, and §5 forbids circumventing provider protections. As of 2026, the consumer terms of OpenAI, Anthropic, Google, Microsoft and Perplexity do not permit automated/programmatic access to their consumer web apps (chatgpt.com, claude.ai, etc.). Per PRD §7's own fallback clause, the compliant integration modes for Milestone 6 are therefore:
 

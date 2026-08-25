@@ -109,6 +109,8 @@ export async function saveMessage(input: {
   content: string;
   status: MessageStatus;
   selection?: ProviderSelection;
+  /** "mock" | "manual" | "official_api" — how the reply was produced. */
+  integration?: string;
 }): Promise<{ error?: string }> {
   if (input.content.length > MAX_CONTENT) {
     return { error: "Message too long" };
@@ -128,6 +130,9 @@ export async function saveMessage(input: {
     role: input.role,
     content: input.content,
     status: input.status,
+    metadata: input.integration
+      ? { integration: input.integration.slice(0, 32) }
+      : {},
     ...ids,
   });
   if (error) return { error: error.message };

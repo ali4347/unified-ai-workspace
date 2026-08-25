@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { Check, ChevronDown, CircleUserRound, Plus } from "lucide-react";
-import type { ProviderSelection } from "@uaw/types";
+import type { IntegrationMode, ProviderSelection } from "@uaw/types";
 import { getAccount, getEntry } from "@/lib/providers/catalog";
 import { useCatalog } from "@/components/providers/catalog-context";
 import {
@@ -53,22 +54,23 @@ export function AccountSelector({
             key={accountInfo.id}
             email={accountInfo.email}
             status={accountInfo.status}
+            mode={accountInfo.integrationMode}
             active={accountInfo.id === selection.accountId}
             onSelect={() => onSelectAccount(accountInfo.id)}
           />
         ))}
         {entry.accounts.length === 0 && (
           <p className="px-2 py-1.5 text-sm text-muted-foreground">
-            No accounts connected yet
+            No accounts connected — replies stay mock
           </p>
         )}
-        <div
-          className="mt-1 flex cursor-not-allowed items-center gap-2 rounded-md border-t px-2 pb-1.5 pt-2 text-sm text-muted-foreground/60"
-          title="Real account connections arrive with Milestone 6"
+        <Link
+          href="/settings"
+          className="mt-1 flex items-center gap-2 rounded-md border-t px-2 pb-1.5 pt-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <Plus className="size-4" />
           Connect account
-        </div>
+        </Link>
       </PopoverContent>
     </Popover>
   );
@@ -77,11 +79,13 @@ export function AccountSelector({
 function AccountRow({
   email,
   status,
+  mode,
   active,
   onSelect,
 }: Readonly<{
   email: string;
   status: string;
+  mode?: IntegrationMode;
   active: boolean;
   onSelect: () => void;
 }>) {
@@ -105,6 +109,11 @@ function AccountRow({
         )}
       />
       <span className="min-w-0 flex-1 truncate">{email}</span>
+      {mode && (
+        <span className="shrink-0 rounded-full border px-1.5 py-px text-[10px] text-muted-foreground">
+          {mode === "manual" ? "manual" : "API"}
+        </span>
+      )}
       {active && <Check className="size-4 shrink-0" />}
     </button>
   );

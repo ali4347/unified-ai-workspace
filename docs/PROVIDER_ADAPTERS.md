@@ -44,11 +44,19 @@ The registry maps slug → `{ enabled, integrationStatus, adapter }`. UI reads t
 
 | Provider | Status | Planned milestone | Notes |
 | --- | --- | --- | --- |
-| Mock | active (M4 ✅) | M4 | `MockAdapter` in provider-core drives all UI development; clearly labeled, never impersonates a real provider |
-| Claude | `disabled` | M6/M7 | Compliant mode TBD at the M6 gate: `official_api` or `manual` (consumer-site automation is not permitted by current Anthropic consumer terms) |
-| ChatGPT | `disabled` | M6/M7 | Same gate; OpenAI consumer terms likewise prohibit automated access to chatgpt.com |
+| Mock | active (M4 ✅) | M4 | `MockAdapter` in provider-core drives development; clearly labeled, never impersonates a real provider; used whenever no account is connected |
+| Claude | `manual` + optional `official_api` (M6 ✅) | M6 | See the M6 compliance record below |
+| ChatGPT | `disabled` | M7 | Same approved modes planned; enabled at M7 |
 | Gemini | `disabled` | Phase 2 | — |
 | Perplexity | `disabled` | Phase 2 | — |
 | Copilot | `disabled` | Phase 2 | — |
 
-See `docs/MILESTONES.md` → "Milestone 6 compliance gate" for the decision that must be made with the product owner.
+## Milestone 6 compliance record — Claude (2026-08-25)
+
+1. **ToS review:** Anthropic's consumer terms (claude.ai) prohibit automated/programmatic access to the consumer web app; the Anthropic **API** terms permit programmatic use with the account holder's own API key. Conclusion unchanged from the standing engineering position in `docs/SECURITY.md`.
+2. **Mechanism check:** `manual` mode automates nothing — the app builds a context package, the user performs the provider interaction in their own session and pastes the reply back. `official_api` mode calls the official Anthropic API through a server proxy with the user's own key, which is held in the user's browser (localStorage) and forwarded per request only — never stored, logged or persisted server-side. No cookies touched, no passwords requested/stored, no limits/CAPTCHA/anti-automation circumvented.
+3. **Failure modes** mapped to normalized codes in the proxy (`LOGIN_REQUIRED` for invalid/missing key, `MODEL_UNAVAILABLE`, `USAGE_LIMIT` for provider rate limits, `NETWORK_ERROR`) and surfaced by `HttpStreamAdapter`.
+4. **Usage limits:** surfaced as `USAGE_LIMIT` + the user can switch providers; never bypassed (PRD §35).
+5. **Product-owner sign-off:** recorded 2026-08-25 — mode decision "Manual + Official API" approved by the product owner (session decision, AskUserQuestion).
+
+Implementation notes: client half = `HttpStreamAdapter` (provider-core, generic); server half = `apps/web/src/app/api/providers/claude` + `lib/providers/server/claude.ts` (the only place Claude-specific logic lives). `claude-opus-5` requests enable Anthropic's server-side refusal fallbacks (`fallbacks: "default"`) so a safety decline reroutes to a fallback model instead of dead-ending.
