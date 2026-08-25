@@ -3,16 +3,15 @@ import type {
   MessageStatus,
   ProviderSelection,
 } from "@uaw/types";
-import { getCatalogEntry, getModel } from "@/lib/providers/catalog";
 
 /**
  * Mock chat engine (Milestone 2). Produces clearly-labeled fake replies with
  * simulated incremental rendering — it never pretends a real provider is
  * streaming (PRD §34). Replaced by the provider adapter registry at
- * Milestone 4; messages persist to Supabase at Milestone 3.
+ * Milestone 4; messages persist to Supabase since Milestone 3.
  */
 
-/** A message as held in UI state. Not persisted until Milestone 3. */
+/** A message as held in UI state (persisted via chat actions since M3). */
 export interface UiChatMessage {
   id: string;
   role: MessageRole;
@@ -26,13 +25,15 @@ export interface UiChatMessage {
 const CHUNK_INTERVAL_MS = 35;
 const INITIAL_DELAY_MS = 350;
 
-function buildMockReply(selection: ProviderSelection, prompt: string): string {
-  const provider = getCatalogEntry(selection.providerSlug).meta;
-  const model = getModel(selection.providerSlug, selection.modelId);
+function buildMockReply(
+  providerName: string,
+  modelName: string,
+  prompt: string
+): string {
   const quoted = prompt.length > 160 ? `${prompt.slice(0, 160)}…` : prompt;
 
   return [
-    `This is a mock ${provider.name} (${model.name}) reply — no real provider is connected yet. Real integrations arrive with Milestone 6, after the compliance gate.`,
+    `This is a mock ${providerName} (${modelName}) reply — no real provider is connected yet. Real integrations arrive with Milestone 6, after the compliance gate.`,
     `You said: “${quoted}”`,
     `This thread is a Master Conversation: switch the provider or model in the header and send another message — every reply stays in the same conversation, each labeled with the provider that produced it.`,
   ].join("\n\n");
@@ -43,14 +44,18 @@ function buildMockReply(selection: ProviderSelection, prompt: string): string {
  * cancellation no further callbacks fire.
  */
 export function streamMockReply(
-  selection: ProviderSelection,
+  names: { providerName: string; modelName: string },
   prompt: string,
   callbacks: {
     onChunk: (text: string) => void;
     onComplete: () => void;
   }
 ): () => void {
-  const words = buildMockReply(selection, prompt).split(/(?<=\s)/);
+  const words = buildMockReply(
+    names.providerName,
+    names.modelName,
+    prompt
+  ).split(/(?<=\s)/);
   let index = 0;
   let interval: ReturnType<typeof setInterval> | undefined;
 

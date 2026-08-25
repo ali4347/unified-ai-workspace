@@ -2,7 +2,8 @@
 
 import { Check, ChevronDown } from "lucide-react";
 import type { ModelInfo, ProviderSelection } from "@uaw/types";
-import { getModel, PROVIDER_CATALOG } from "@/lib/providers/catalog";
+import { getModel } from "@/lib/providers/catalog";
+import { useCatalog } from "@/components/providers/catalog-context";
 import {
   Popover,
   PopoverContent,
@@ -25,10 +26,11 @@ export function AiSelector({
   onSelect: (model: ModelInfo) => void;
   disabled?: boolean;
 }>) {
-  const activeProvider = PROVIDER_CATALOG.find(
+  const catalog = useCatalog();
+  const activeProvider = catalog.find(
     (entry) => entry.meta.slug === selection.providerSlug
   );
-  const activeModel = getModel(selection.providerSlug, selection.modelId);
+  const activeModel = getModel(catalog, selection.providerSlug, selection.modelId);
 
   return (
     <Popover>
@@ -39,13 +41,13 @@ export function AiSelector({
       >
         <span>
           {activeProvider?.meta.name}{" "}
-          <span className="text-muted-foreground">{activeModel.name}</span>
+          <span className="text-muted-foreground">{activeModel?.name}</span>
         </span>
         <ChevronDown className="size-4 text-muted-foreground" />
       </PopoverTrigger>
 
       <PopoverContent className="max-h-96 w-72 overflow-y-auto">
-        {PROVIDER_CATALOG.map((entry) => (
+        {catalog.map((entry) => (
           <div key={entry.meta.slug} className="py-1">
             <div className="flex items-center gap-2 px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               {entry.meta.name}

@@ -1,2 +1,4 @@
--- Seed data arrives with Milestone 3 (providers + models metadata).
--- Intentionally empty in Milestone 1 (PRD rule 18: no premature implementation).
+-- Provider/model reference data is seeded idempotently inside
+-- supabase/migrations/20260825090000_core_schema.sql so that `db push`
+-- seeds the hosted project too (seed.sql only runs on local resets).
+-- Nothing further to seed here.

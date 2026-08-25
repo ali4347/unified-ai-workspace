@@ -1,18 +1,16 @@
-import { FolderKanban } from "lucide-react";
+import { getProjects } from "@/lib/db/queries";
+import { ProjectManager } from "@/components/projects/project-manager";
 
 export const metadata = {
   title: "Projects",
 };
 
-export default function ProjectsPage() {
+export default async function ProjectsPage() {
+  const projects = await getProjects();
+
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 pb-10 text-center">
-      <FolderKanban className="size-8 text-muted-foreground" />
-      <h1 className="text-xl font-semibold tracking-tight">Projects</h1>
-      <p className="max-w-sm text-sm text-muted-foreground">
-        Organize conversations into projects with custom instructions and a
-        default provider. Project CRUD ships with Milestone 3 (Database).
-      </p>
+    <div className="mx-auto w-full max-w-2xl flex-1 overflow-y-auto px-4 py-6">
+      <ProjectManager projects={projects} />
     </div>
   );
 }

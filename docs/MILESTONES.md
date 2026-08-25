@@ -6,8 +6,8 @@ Source: [PRD.md §60](PRD.md). One milestone at a time (PRD rules 2, 18). Commit
 | --- | --- | --- | --- |
 | 1 | Foundation | ✅ Done (2026-08-24) | Monorepo, Next.js, Tailwind v4, shadcn base, Supabase clients, env config, auth (Google + magic link), protected dashboard, profiles table + RLS. Verified in production 2026-08-25 (Google OAuth + Supabase live at https://unified-ai-workspace-web.vercel.app) |
 | 2 | Core UI | ✅ Done (2026-08-25) | App shell polish, chat header, provider/model/account selectors, composer, message list with provider badges + switch dividers, theme switcher — all on mock providers |
-| 3 | Database | ⬜ Next | Full schema (providers, models, accounts, projects, conversations, messages, attachments, sessions, devices, events), RLS, CRUD |
-| 4 | Provider Core | ⬜ | `packages/provider-core`: adapter interface, registry, connection state, normalized errors, provider events, mock adapters |
+| 3 | Database | ✅ Done (2026-08-25) | Full schema migration + RLS + seeds + storage policies; conversation/message persistence; recents, rename/archive/delete, search; project CRUD |
+| 4 | Provider Core | ⬜ Next | `packages/provider-core`: adapter interface, registry, connection state, normalized errors, provider events, mock adapters |
 | 5 | Browser Extension Foundation | ⬜ | `apps/extension`: MV3, service worker, secure messaging, allowlist, connection status only |
 | 6 | First Provider Proof of Concept | ⬜ | **Compliance gate** — see below |
 | 7 | Second Provider | ⬜ | Provider A → Master Conversation → Provider B |
@@ -39,6 +39,17 @@ Acceptance criteria (PRD §55): sign-in/sign-out and route protection are implem
 - App shell polish: empty desktop header strip removed when the sidebar is expanded
 - Shared types: `ModelInfo`, `ProviderAccountInfo`, `ProviderSelection` in `@uaw/types`
 - Not included by design: persistence (M3), real adapters/registry (M4), search (M3)
+
+## Milestone 3 — delivered scope
+
+- `supabase/migrations/20260825090000_core_schema.sql`: all PRD §31 tables (providers, models, connected_accounts, projects, conversations, messages, attachments, provider_sessions, extension_devices, provider_events) with RLS owner policies on every user table, reference-table read policies, updated_at triggers, indexes, idempotent provider/model seeds, private `attachments` storage bucket + ownership policies
+- `supabase/tests/rls_checks.sql`: transactional cross-user isolation checks (PRD §55, §59) — run against the target DB, rolls back
+- Chat persistence: conversation auto-created on first message, messages saved with provider/model/account ids, per-conversation active selection stored, `/chat/[id]` reloads full history
+- Sidebar: live recents (ordered by activity), rename / archive / delete, global search dialog (titles + message contents + project names, ILIKE)
+- Projects: CRUD with custom instructions (PRD §20–21), "New chat in project"
+- Provider/model catalog now database-built (fallback static catalog keeps the app usable pre-migration); accounts come from `connected_accounts` (none until M6)
+- Hand-written typed `Database` schema for supabase-js
+- **Note:** the migration must be applied to the hosted Supabase project (`supabase db push` or SQL Editor) — scheduled with the final deployment step (M10)
 
 ## Milestone 6 compliance gate
 

@@ -2,7 +2,8 @@
 
 import { Check, ChevronDown, CircleUserRound, Plus } from "lucide-react";
 import type { ProviderSelection } from "@uaw/types";
-import { getAccount, getCatalogEntry } from "@/lib/providers/catalog";
+import { getAccount, getEntry } from "@/lib/providers/catalog";
+import { useCatalog } from "@/components/providers/catalog-context";
 import {
   Popover,
   PopoverContent,
@@ -25,8 +26,9 @@ export function AccountSelector({
   onSelectAccount: (accountId: string) => void;
   disabled?: boolean;
 }>) {
-  const entry = getCatalogEntry(selection.providerSlug);
-  const active = getAccount(selection.providerSlug, selection.accountId);
+  const catalog = useCatalog();
+  const entry = getEntry(catalog, selection.providerSlug);
+  const active = getAccount(catalog, selection.providerSlug, selection.accountId);
 
   return (
     <Popover>
@@ -57,7 +59,7 @@ export function AccountSelector({
         ))}
         {entry.accounts.length === 0 && (
           <p className="px-2 py-1.5 text-sm text-muted-foreground">
-            No accounts yet
+            No accounts connected yet
           </p>
         )}
         <div
@@ -65,7 +67,7 @@ export function AccountSelector({
           title="Real account connections arrive with Milestone 6"
         >
           <Plus className="size-4" />
-          Connect another account
+          Connect account
         </div>
       </PopoverContent>
     </Popover>

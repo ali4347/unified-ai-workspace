@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/env";
+import { getRecentConversations } from "@/lib/db/queries";
 import { AppShell } from "@/components/layout/app-shell";
 
 export const dynamic = "force-dynamic";
@@ -22,5 +23,11 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
-  return <AppShell email={user.email ?? ""}>{children}</AppShell>;
+  const recents = await getRecentConversations();
+
+  return (
+    <AppShell email={user.email ?? ""} recents={recents}>
+      {children}
+    </AppShell>
+  );
 }

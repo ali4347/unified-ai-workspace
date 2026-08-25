@@ -64,11 +64,12 @@ export interface ProviderAccountInfo {
   status: ProviderConnectionState;
 }
 
-/** The active provider/model/account of a conversation (PRD §15–16, §31). */
+/** The active provider/model/account of a conversation (PRD §15–16, §31).
+ * `accountId` is null until the user has a connected account (M6). */
 export interface ProviderSelection {
   providerSlug: ProviderSlug;
   modelId: string;
-  accountId: string;
+  accountId: string | null;
 }
 
 // ---------------------------------------------------------------------------

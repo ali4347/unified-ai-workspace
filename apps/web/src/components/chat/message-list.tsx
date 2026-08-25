@@ -3,7 +3,7 @@
 import * as React from "react";
 import { ArrowLeftRight, Check, Copy } from "lucide-react";
 import type { UiChatMessage } from "@/lib/providers/mock-chat";
-import { getCatalogEntry, getModel } from "@/lib/providers/catalog";
+import { useCatalog } from "@/components/providers/catalog-context";
 import { ProviderBadge } from "@/components/providers/provider-badge";
 import { Button } from "@/components/ui/button";
 
@@ -56,19 +56,21 @@ export function MessageList({
 function ProviderChangeDivider({
   message,
 }: Readonly<{ message: UiChatMessage }>) {
+  const catalog = useCatalog();
   if (!message.selection) return null;
-  const provider = getCatalogEntry(message.selection.providerSlug).meta;
-  const model = getModel(
-    message.selection.providerSlug,
-    message.selection.modelId
+  const entry = catalog.find(
+    (e) => e.meta.slug === message.selection?.providerSlug
   );
+  const model = entry?.models.find((m) => m.id === message.selection?.modelId);
 
   return (
     <div className="flex items-center gap-3 text-xs text-muted-foreground">
       <span className="h-px flex-1 bg-border" />
       <span className="flex items-center gap-1.5">
         <ArrowLeftRight className="size-3" />
-        Provider changed — now {provider.name} · {model.name}
+        Provider changed — now{" "}
+        {entry?.meta.name ?? message.selection.providerSlug}
+        {model ? ` · ${model.name}` : ""}
       </span>
       <span className="h-px flex-1 bg-border" />
     </div>

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { PanelLeft } from "lucide-react";
 import { Sidebar } from "@/components/sidebar/sidebar";
+import type { ConversationListItem } from "@/lib/db/queries";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -12,8 +13,13 @@ import { cn } from "@/lib/utils";
  */
 export function AppShell({
   email,
+  recents,
   children,
-}: Readonly<{ email: string; children: React.ReactNode }>) {
+}: Readonly<{
+  email: string;
+  recents: ConversationListItem[];
+  children: React.ReactNode;
+}>) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -28,6 +34,7 @@ export function AppShell({
       >
         <Sidebar
           email={email}
+          recents={recents}
           onCollapse={() => setCollapsed(true)}
           onNavigate={() => undefined}
         />
@@ -44,6 +51,7 @@ export function AppShell({
           <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-xl">
             <Sidebar
               email={email}
+              recents={recents}
               onCollapse={() => setMobileOpen(false)}
               onNavigate={() => setMobileOpen(false)}
             />

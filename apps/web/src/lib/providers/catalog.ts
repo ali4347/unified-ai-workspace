@@ -6,21 +6,159 @@ import {
   type ProviderSelection,
   type ProviderSlug,
 } from "@uaw/types";
+import type {
+  ConnectedAccountRow,
+  ModelRow,
+  ProviderRow,
+} from "@/lib/db/database.types";
 
 /**
- * Mock provider catalog (Milestone 2). Drives the provider/model/account
- * selectors so no models are hard-coded in UI components (PRD §15).
- * Milestone 3 replaces this with the `providers`/`models`/`connected_accounts`
- * tables; Milestone 4 wires it into the provider registry. Accounts here are
- * fake sample data — no real provider connection exists yet.
+ * Provider catalog: drives the provider/model/account selectors so nothing
+ * is hard-coded in UI components (PRD §15). Since Milestone 3 the catalog is
+ * built from the database (providers/models reference tables + the user's
+ * connected_accounts); FALLBACK_CATALOG keeps the app usable before the
+ * schema migration is applied. Milestone 4 puts adapters behind it.
  */
 export interface ProviderCatalogEntry {
   meta: ProviderMeta;
-  /** Selectable in the UI. MVP providers only (PRD §50–51). */
+  /** Selectable in the UI. MVP providers only until Phase 2 (PRD §50–51). */
   enabled: boolean;
   models: ModelInfo[];
   accounts: ProviderAccountInfo[];
 }
+
+export type Catalog = readonly ProviderCatalogEntry[];
+
+// ---------------------------------------------------------------------------
+// Build from database rows
+// ---------------------------------------------------------------------------
+
+export interface CatalogData {
+  providers: ProviderRow[];
+  models: ModelRow[];
+  accounts: ConnectedAccountRow[];
+}
+
+export function buildCatalog(data: CatalogData): Catalog {
+  if (data.providers.length === 0) return FALLBACK_CATALOG;
+
+  return [...data.providers]
+    .filter((p) => p.status !== "disabled")
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((provider) => ({
+      meta: {
+        slug: provider.slug,
+        name: provider.name,
+        phase: provider.status === "active" ? "mvp" : "phase2",
+      },
+      enabled: provider.status === "active",
+      models: data.models
+        .filter((m) => m.provider_id === provider.id && m.status === "active")
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map((m) => ({
+          id: m.external_id,
+          providerSlug: provider.slug,
+          name: m.name,
+          description: m.display_name ?? undefined,
+        })),
+      accounts: data.accounts
+        .filter((a) => a.provider_id === provider.id)
+        .map((a) => ({
+          id: a.id,
+          providerSlug: provider.slug,
+          email: a.email ?? a.display_name ?? "Unnamed account",
+          status: a.status,
+        })),
+    }));
+}
+
+/** Selection of a stored message/conversation (uuid columns → catalog ids). */
+export function selectionFromIds(
+  data: CatalogData,
+  ids: {
+    provider_id: string | null;
+    model_id: string | null;
+    account_id: string | null;
+  }
+): ProviderSelection | undefined {
+  const provider = data.providers.find((p) => p.id === ids.provider_id);
+  const model = data.models.find((m) => m.id === ids.model_id);
+  if (!provider || !model) return undefined;
+  return {
+    providerSlug: provider.slug,
+    modelId: model.external_id,
+    accountId: ids.account_id,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Pure lookups over a catalog
+// ---------------------------------------------------------------------------
+
+export function getEntry(
+  catalog: Catalog,
+  slug: ProviderSlug
+): ProviderCatalogEntry {
+  const entry = catalog.find((e) => e.meta.slug === slug);
+  if (!entry) throw new Error(`Unknown provider slug: ${slug}`);
+  return entry;
+}
+
+export function getModel(
+  catalog: Catalog,
+  slug: ProviderSlug,
+  modelId: string
+): ModelInfo | undefined {
+  return getEntry(catalog, slug).models.find((m) => m.id === modelId);
+}
+
+export function getAccount(
+  catalog: Catalog,
+  slug: ProviderSlug,
+  accountId: string | null
+): ProviderAccountInfo | undefined {
+  if (accountId === null) return undefined;
+  return getEntry(catalog, slug).accounts.find((a) => a.id === accountId);
+}
+
+/** First enabled provider with at least one model. */
+export function defaultSelection(catalog: Catalog): ProviderSelection {
+  const first = catalog.find((e) => e.enabled && e.models.length > 0);
+  if (!first) throw new Error("Catalog has no enabled provider with models");
+  return {
+    providerSlug: first.meta.slug,
+    modelId: first.models[0].id,
+    accountId: first.accounts[0]?.id ?? null,
+  };
+}
+
+/** Selection to apply when the user picks a model in the selector:
+ * keeps the account if the provider is unchanged, else provider default. */
+export function selectionForModel(
+  catalog: Catalog,
+  current: ProviderSelection,
+  next: ModelInfo
+): ProviderSelection {
+  if (next.providerSlug === current.providerSlug) {
+    return { ...current, modelId: next.id };
+  }
+  const entry = getEntry(catalog, next.providerSlug);
+  return {
+    providerSlug: next.providerSlug,
+    modelId: next.id,
+    accountId: entry.accounts[0]?.id ?? null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Static fallback (used before the M3 migration is applied to the database)
+// ---------------------------------------------------------------------------
+
+const meta = (slug: ProviderSlug): ProviderMeta => {
+  const found = PROVIDERS.find((p) => p.slug === slug);
+  if (!found) throw new Error(`Unknown provider slug: ${slug}`);
+  return found;
+};
 
 const model = (
   providerSlug: ProviderSlug,
@@ -29,40 +167,25 @@ const model = (
   description?: string
 ): ModelInfo => ({ id, providerSlug, name, description });
 
-const account = (
-  providerSlug: ProviderSlug,
-  id: string,
-  email: string
-): ProviderAccountInfo => ({ id, providerSlug, email, status: "connected" });
-
-const meta = (slug: ProviderSlug): ProviderMeta => {
-  const found = PROVIDERS.find((p) => p.slug === slug);
-  if (!found) throw new Error(`Unknown provider slug: ${slug}`);
-  return found;
-};
-
-export const PROVIDER_CATALOG: readonly ProviderCatalogEntry[] = [
+export const FALLBACK_CATALOG: Catalog = [
   {
     meta: meta("claude"),
     enabled: true,
     models: [
-      model("claude", "claude-sonnet", "Sonnet", "Balanced (mock)"),
-      model("claude", "claude-opus", "Opus", "Most capable (mock)"),
-      model("claude", "claude-haiku", "Haiku", "Fastest (mock)"),
+      model("claude", "claude-sonnet", "Sonnet", "Balanced"),
+      model("claude", "claude-opus", "Opus", "Most capable"),
+      model("claude", "claude-haiku", "Haiku", "Fastest"),
     ],
-    accounts: [
-      account("claude", "claude-acc-1", "ali@gmail.com"),
-      account("claude", "claude-acc-2", "work@gmail.com"),
-    ],
+    accounts: [],
   },
   {
     meta: meta("chatgpt"),
     enabled: true,
     models: [
-      model("chatgpt", "chatgpt-flagship", "GPT flagship", "Default (mock)"),
-      model("chatgpt", "chatgpt-mini", "GPT mini", "Lightweight (mock)"),
+      model("chatgpt", "chatgpt-flagship", "GPT flagship", "Default"),
+      model("chatgpt", "chatgpt-mini", "GPT mini", "Lightweight"),
     ],
-    accounts: [account("chatgpt", "chatgpt-acc-1", "khan@gmail.com")],
+    accounts: [],
   },
   {
     meta: meta("gemini"),
@@ -86,52 +209,3 @@ export const PROVIDER_CATALOG: readonly ProviderCatalogEntry[] = [
     accounts: [],
   },
 ];
-
-export function getCatalogEntry(slug: ProviderSlug): ProviderCatalogEntry {
-  const entry = PROVIDER_CATALOG.find((e) => e.meta.slug === slug);
-  if (!entry) throw new Error(`Unknown provider slug: ${slug}`);
-  return entry;
-}
-
-export function getModel(slug: ProviderSlug, modelId: string): ModelInfo {
-  const found = getCatalogEntry(slug).models.find((m) => m.id === modelId);
-  if (!found) throw new Error(`Unknown model ${modelId} for ${slug}`);
-  return found;
-}
-
-export function getAccount(
-  slug: ProviderSlug,
-  accountId: string
-): ProviderAccountInfo | undefined {
-  return getCatalogEntry(slug).accounts.find((a) => a.id === accountId);
-}
-
-/** First enabled provider, its first model and first account. */
-export const DEFAULT_SELECTION: ProviderSelection = (() => {
-  const first = PROVIDER_CATALOG.find((e) => e.enabled);
-  if (!first || first.models.length === 0 || first.accounts.length === 0) {
-    throw new Error("Mock catalog needs one enabled provider with data");
-  }
-  return {
-    providerSlug: first.meta.slug,
-    modelId: first.models[0].id,
-    accountId: first.accounts[0].id,
-  };
-})();
-
-/** Selection to apply when the user picks a model in the selector:
- * keeps the account if the provider is unchanged, else provider default. */
-export function selectionForModel(
-  current: ProviderSelection,
-  next: ModelInfo
-): ProviderSelection {
-  if (next.providerSlug === current.providerSlug) {
-    return { ...current, modelId: next.id };
-  }
-  const entry = getCatalogEntry(next.providerSlug);
-  return {
-    providerSlug: next.providerSlug,
-    modelId: next.id,
-    accountId: entry.accounts[0]?.id ?? "",
-  };
-}
