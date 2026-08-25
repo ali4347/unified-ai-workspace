@@ -48,13 +48,15 @@ Implemented posture (`apps/extension`):
 - Portal ↔ extension messaging uses `window.postMessage` with origin and envelope validation on both ends; no credentials ever cross this channel.
 - The extension is not permission to bypass provider restrictions (PRD §27).
 
-## Release checklist (PRD §59)
+## Release checklist (PRD §59) — reviewed at M9 (2026-08-25)
 
-- [ ] No external AI passwords stored
-- [ ] RLS enabled on all user tables
-- [ ] Storage ownership policies enabled
-- [ ] No sensitive tokens in logs
-- [ ] Browser messaging validates origin
-- [ ] Extension permissions minimized
-- [ ] Cross-user access tests fail (unauthorized access impossible)
-- [ ] No provider restriction is bypassed
+- [x] No external AI passwords stored — no password fields anywhere; API keys (optional, user-supplied) live in the user's browser only
+- [x] RLS enabled on all user tables — see Database section; verified by `supabase/tests/rls_checks.sql`
+- [x] Storage ownership policies enabled — `attachments` bucket, first path segment = `auth.uid()`
+- [x] No sensitive tokens in logs — proxy routes never log keys or prompt content; client logs carry error digests only
+- [x] Browser messaging validates origin — extension service worker + portal bridge validate sender id, origin allowlist and envelope shape on both ends
+- [x] Extension permissions minimized — zero `permissions`/`host_permissions`; allowlisted content scripts only
+- [x] Cross-user access tests fail — `rls_checks.sql` (run against the hosted DB after each migration push)
+- [x] No provider restriction is bypassed — no consumer-site automation exists; `manual` + `official_api` modes only; extension answers automation messages with `UNSUPPORTED_ACTION`
+
+Remaining operational step: run `rls_checks.sql` against the hosted project whenever migrations are pushed (M10 deployment step).

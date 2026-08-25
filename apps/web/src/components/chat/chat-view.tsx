@@ -87,10 +87,19 @@ export function ChatView({
 
   React.useEffect(() => () => abortRef.current?.abort(), []);
 
-  /** Persists fire-and-forget; failures surface as a notice, never block UI. */
+  /** Persists fire-and-forget with one retry on transient failure (M9);
+   * failures surface as a notice, never block the UI. */
   const persist = React.useCallback(
     (work: () => Promise<{ error?: string }>) => {
-      work()
+      const attempt = async (): Promise<{ error?: string }> => {
+        try {
+          return await work();
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, 1_000));
+          return work();
+        }
+      };
+      attempt()
         .then((result) => {
           if (result.error) setSaveError(result.error);
         })

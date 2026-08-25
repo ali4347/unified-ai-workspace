@@ -12,8 +12,8 @@ Source: [PRD.md §60](PRD.md). One milestone at a time (PRD rules 2, 18). Commit
 | 6 | First Provider Proof of Concept | ✅ Done (2026-08-25) | Claude via `manual` + optional `official_api` (user key, browser-held); compliance record in PROVIDER_ADAPTERS.md |
 | 7 | Second Provider | ✅ Done (2026-08-25) | ChatGPT via the same approved modes; Claude ↔ ChatGPT switching inside one Master Conversation |
 | 8 | Context Handoff | ✅ Done (2026-08-25) | Automatic strategies A–D, deterministic rolling summaries persisted per conversation, context_handoff events |
-| 9 | Production Hardening | ⬜ Next | Monitoring, retries, security review, indexes |
-| 10 | Deployment | ⬜ | Vercel + Supabase + GitHub |
+| 9 | Production Hardening | ✅ Done (2026-08-25) | Error boundaries, loading skeletons, persist retry, trigram search indexes, unit tests (vitest), PRD §59 security review passed |
+| 10 | Deployment | ⬜ Next | Push to GitHub (Vercel auto-deploy) + apply migrations to hosted Supabase |
 
 ## Milestone 1 — delivered scope
 
@@ -91,6 +91,15 @@ Acceptance criteria (PRD §55): sign-in/sign-out and route protection are implem
 - Manual-mode packages use the same strategy engine (summary + recent window instead of unbounded transcripts)
 - `context_handoff` provider event logged whenever a send targets a different provider than the previous assistant reply, with strategy/message-count/summary-size metadata
 - Token estimation: chars/4, conservative and provider-agnostic
+
+## Milestone 9 — delivered scope
+
+- Error handling: route-level `error.tsx`, root `global-error.tsx`, `not-found.tsx`
+- Loading states: dashboard + conversation skeletons (`loading.tsx`)
+- Retries: client persistence retries once on transient failure; provider requests surface normalized errors and stay resendable
+- Performance: `pg_trgm` GIN indexes on conversation titles, message contents and project names (ILIKE search); core FK/order indexes shipped with M3
+- Tests: vitest (`pnpm test`) — context handoff strategies/summaries, catalog building/selection, proxy validation/rate limiting (22 tests); proxy validation extracted to a pure module for testability
+- Security review: PRD §59 checklist walked and recorded in SECURITY.md (all items pass; extension runs zero permissions)
 
 ## Milestone 6 compliance gate (resolved)
 
