@@ -486,7 +486,7 @@ function EmptyState() {
 function MockNotice() {
   return (
     <p className="pt-2 text-center text-xs text-muted-foreground">
-      No account selected — replies are simulated (mock). Connect a Claude
+      No account selected — replies are simulated (mock). Connect a provider
       account in Settings → AI providers for real replies.
     </p>
   );

@@ -25,6 +25,7 @@ import { getProviderKey } from "@/lib/providers/key-store";
 /** Providers with a live proxy route (server half of official_api mode). */
 const PROXY_ENDPOINTS: Partial<Record<ProviderSlug, string>> = {
   claude: "/api/providers/claude",
+  chatgpt: "/api/providers/chatgpt",
 };
 
 class RoutingAdapter implements AIProviderAdapter {

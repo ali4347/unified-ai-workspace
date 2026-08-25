@@ -46,7 +46,7 @@ The registry maps slug → `{ enabled, integrationStatus, adapter }`. UI reads t
 | --- | --- | --- | --- |
 | Mock | active (M4 ✅) | M4 | `MockAdapter` in provider-core drives development; clearly labeled, never impersonates a real provider; used whenever no account is connected |
 | Claude | `manual` + optional `official_api` (M6 ✅) | M6 | See the M6 compliance record below |
-| ChatGPT | `disabled` | M7 | Same approved modes planned; enabled at M7 |
+| ChatGPT | `manual` + optional `official_api` (M7 ✅) | M7 | Same record applies (OpenAI consumer web app not automated; official OpenAI API with the user's own browser-held key via `/api/providers/chatgpt`); sign-off 2026-08-25 |
 | Gemini | `disabled` | Phase 2 | — |
 | Perplexity | `disabled` | Phase 2 | — |
 | Copilot | `disabled` | Phase 2 | — |

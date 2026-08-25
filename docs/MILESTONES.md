@@ -10,8 +10,8 @@ Source: [PRD.md §60](PRD.md). One milestone at a time (PRD rules 2, 18). Commit
 | 4 | Provider Core | ✅ Done (2026-08-25) | `packages/provider-core`: adapter interface, registry, event bus, normalized errors, mock adapter; chat wired through the registry |
 | 5 | Browser Extension Foundation | ✅ Done (2026-08-25) | `apps/extension`: MV3, service worker, origin-validated messaging, allowlist, tab-presence detection only; portal status card |
 | 6 | First Provider Proof of Concept | ✅ Done (2026-08-25) | Claude via `manual` + optional `official_api` (user key, browser-held); compliance record in PROVIDER_ADAPTERS.md |
-| 7 | Second Provider | ⬜ Next | ChatGPT, same approved modes; then Provider A → Master Conversation → Provider B |
-| 8 | Context Handoff | ⬜ | Strategies A–D, rolling summaries, switch events |
+| 7 | Second Provider | ✅ Done (2026-08-25) | ChatGPT via the same approved modes; Claude ↔ ChatGPT switching inside one Master Conversation |
+| 8 | Context Handoff | ⬜ Next | Strategies A–D, rolling summaries, switch events |
 | 9 | Production Hardening | ⬜ | Monitoring, retries, security review, indexes |
 | 10 | Deployment | ⬜ | Vercel + Supabase + GitHub |
 
@@ -76,6 +76,13 @@ Acceptance criteria (PRD §55): sign-in/sign-out and route protection are implem
 - Model mapping migration: `models.capabilities.api_model` (`claude-sonnet-5`, `claude-opus-5`, `claude-haiku-4-5`); `providers.integration_type = 'manual'` for Claude
 - Settings → AI providers: connect (manual / API key with validation), list, disconnect; account selector shows mode chips; "Connect account" links to Settings
 - Messages record how they were produced (`metadata.integration`: mock / manual / official_api); badges label mock and manual replies; mock notice only when no account is selected
+
+## Milestone 7 — delivered scope
+
+- ChatGPT enabled with the same gate decision: `manual` + optional `official_api`
+- `/api/providers/chatgpt`: OpenAI Chat Completions proxy — raw fetch + SSE re-streaming (no SDK dependency), same shared plumbing (portal auth, rate limit, validation, normalized errors), user key browser-held per request
+- Migration: `providers.integration_type='manual'` for chatgpt; `models.capabilities.api_model` → `gpt-5.1` / `gpt-5.1-mini` (update via migration if OpenAI renames)
+- PRD §58 provider-switching criteria satisfied end-to-end: Provider A messages → switch in header → Provider B receives the built context (system note + full history) and continues; every reply records provider/model/account and mode
 
 ## Milestone 6 compliance gate (resolved)
 

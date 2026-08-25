@@ -23,7 +23,7 @@ export const metadata = {
 
 // Providers with a live official_api proxy route (kept in sync with
 // lib/providers/registry.ts PROXY_ENDPOINTS).
-const PROXIED_PROVIDERS = new Set(["claude"]);
+const PROXIED_PROVIDERS = new Set(["claude", "chatgpt"]);
 
 export default async function SettingsPage() {
   const supabase = await createClient();
