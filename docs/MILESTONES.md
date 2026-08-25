@@ -13,7 +13,7 @@ Source: [PRD.md §60](PRD.md). One milestone at a time (PRD rules 2, 18). Commit
 | 7 | Second Provider | ✅ Done (2026-08-25) | ChatGPT via the same approved modes; Claude ↔ ChatGPT switching inside one Master Conversation |
 | 8 | Context Handoff | ✅ Done (2026-08-25) | Automatic strategies A–D, deterministic rolling summaries persisted per conversation, context_handoff events |
 | 9 | Production Hardening | ✅ Done (2026-08-25) | Error boundaries, loading skeletons, persist retry, trigram search indexes, unit tests (vitest), PRD §59 security review passed |
-| 10 | Deployment | ⬜ Next | Push to GitHub (Vercel auto-deploy) + apply migrations to hosted Supabase |
+| 10 | Deployment | ✅ Done (2026-08-25) | Pushed to GitHub → Vercel auto-deploy; **operator step open:** apply pending migrations to hosted Supabase (see below) |
 
 ## Milestone 1 — delivered scope
 
@@ -100,6 +100,14 @@ Acceptance criteria (PRD §55): sign-in/sign-out and route protection are implem
 - Performance: `pg_trgm` GIN indexes on conversation titles, message contents and project names (ILIKE search); core FK/order indexes shipped with M3
 - Tests: vitest (`pnpm test`) — context handoff strategies/summaries, catalog building/selection, proxy validation/rate limiting (22 tests); proxy validation extracted to a pure module for testability
 - Security review: PRD §59 checklist walked and recorded in SECURITY.md (all items pass; extension runs zero permissions)
+
+## Milestone 10 — deployment state
+
+- Code: pushed to GitHub `main` → Vercel builds and deploys https://unified-ai-workspace-web.vercel.app automatically (env vars configured since M1)
+- **Pending operator step (requires Supabase dashboard access):** apply the post-M1 migrations to the hosted project, in order —
+  `20260825090000_core_schema.sql`, `20260825140000_claude_integration.sql`, `20260825150000_chatgpt_integration.sql`, `20260825160000_search_indexes.sql`
+  (SQL Editor, or `supabase link` + `supabase db push`), then run `supabase/tests/rls_checks.sql` once (self-rolling-back) to verify isolation. Until then the deployed app degrades gracefully: mock chat works, persistence/search/accounts stay off.
+- Extension ships as a development build only (`pnpm --filter @uaw/extension build` → load `apps/extension/dist` unpacked), per PRD §60 M10
 
 ## Milestone 6 compliance gate (resolved)
 

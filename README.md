@@ -10,7 +10,9 @@ Full product specification: [docs/PRD.md](docs/PRD.md)
 
 ## Status
 
-Milestone 1 (Foundation) is implemented. See [docs/MILESTONES.md](docs/MILESTONES.md) for the full roadmap and current progress.
+Milestones 1–10 are implemented — foundation, core UI, database + RLS, provider core, extension foundation, Claude + ChatGPT integrations (compliant `manual` + optional `official_api` modes), context handoff, hardening and deployment. See [docs/MILESTONES.md](docs/MILESTONES.md) for per-milestone scope.
+
+Production: https://unified-ai-workspace-web.vercel.app
 
 ## Stack
 
@@ -27,21 +29,21 @@ Milestone 1 (Foundation) is implemented. See [docs/MILESTONES.md](docs/MILESTONE
 ```text
 unified-ai-workspace/
   apps/
-    web/                 Next.js portal (auth + dashboard shell)
+    web/                 Next.js portal (chat, projects, settings, provider proxies)
+    extension/           MV3 companion — tab-presence detection only, zero permissions
   packages/
     types/               @uaw/types — shared provider/domain types
+    provider-core/       @uaw/provider-core — adapter interface, registry, events, adapters
   supabase/
-    migrations/          SQL migrations (RLS enabled)
-    seed.sql             provider/model seed (Milestone 3)
+    migrations/          SQL migrations (schema, RLS, seeds, indexes)
+    tests/               rls_checks.sql — cross-user isolation checks
   docs/
     PRD.md               product requirements (source of truth)
     ARCHITECTURE.md      implemented architecture + decisions
-    PROVIDER_ADAPTERS.md adapter interface, registry, compliance
+    PROVIDER_ADAPTERS.md adapter interface, registry, compliance records
     SECURITY.md          credential, RLS and compliance rules
     MILESTONES.md        roadmap + progress tracker
 ```
-
-`apps/extension`, `packages/provider-core`, `packages/ui` etc. are added in their own milestones (PRD rule 18: no premature implementation).
 
 ## Getting started
 
@@ -60,8 +62,7 @@ pnpm install
 ### 3. Set up Supabase
 
 1. Create a project at [database.new](https://database.new).
-2. Open **SQL Editor** in the Supabase dashboard and run the contents of `supabase/migrations/20260824120000_profiles.sql`.
-   (Alternatively, with the Supabase CLI: `supabase link --project-ref <ref>` then `supabase db push`.)
+2. Apply **all** files in `supabase/migrations/` in filename order — either paste each into the **SQL Editor**, or with the Supabase CLI: `supabase link --project-ref <ref>` then `supabase db push`. Afterwards run `supabase/tests/rls_checks.sql` once (it rolls itself back) to verify RLS isolation.
 3. **Authentication → URL Configuration**:
    - Site URL: `http://localhost:3000`
    - Redirect URLs: `http://localhost:3000/auth/callback`
@@ -83,10 +84,27 @@ If the app starts without these variables it shows a setup notice instead of cra
 
 ```bash
 pnpm dev        # http://localhost:3000
-pnpm build      # production build
+pnpm build      # production build (web)
 pnpm typecheck  # tsc --noEmit across the workspace
 pnpm lint       # eslint across the workspace
+pnpm test       # vitest unit tests
+pnpm --filter @uaw/extension build   # extension dev build → apps/extension/dist
 ```
+
+## Using real providers
+
+Without a connected account, chat replies are clearly-labeled **mocks**. In **Settings → AI providers** you can connect Claude or ChatGPT in two compliant modes:
+
+- **Manual** — zero credentials: the app builds a context package, you paste it into the provider's own site and paste the reply back. The reply is stored in the Master Conversation with a "manual" badge.
+- **Your API key** — automatic streamed replies via the official Anthropic/OpenAI APIs. The key is validated and then stored **only in your browser** (localStorage); each request forwards it through a same-origin proxy that never stores or logs it.
+
+Switching provider mid-conversation hands off context automatically (full history while it fits, otherwise rolling summary + recent messages).
+
+## Deployment
+
+- **Web** — Vercel, auto-deploys from `main`. Env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_APP_URL`.
+- **Database** — hosted Supabase; apply `supabase/migrations/` (SQL Editor or `supabase db push`) and re-run `supabase/tests/rls_checks.sql` after schema changes.
+- **Extension** — development build only: `pnpm --filter @uaw/extension build`, then load `apps/extension/dist` unpacked via chrome://extensions.
 
 ## Compliance position (important)
 

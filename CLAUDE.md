@@ -8,9 +8,11 @@ Multi-provider AI portal. The primary object is a **Master Conversation** owned 
 
 ```bash
 pnpm dev          # run web app (apps/web) on :3000
-pnpm build        # production build
+pnpm build        # production build (web)
 pnpm typecheck    # tsc --noEmit, all workspace packages
 pnpm lint         # eslint, all workspace packages
+pnpm test         # vitest unit tests (context handoff, catalog, proxy validation)
+pnpm --filter @uaw/extension build   # MV3 companion → apps/extension/dist
 ```
 
 ## Layout
