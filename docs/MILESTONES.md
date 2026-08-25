@@ -8,8 +8,8 @@ Source: [PRD.md §60](PRD.md). One milestone at a time (PRD rules 2, 18). Commit
 | 2 | Core UI | ✅ Done (2026-08-25) | App shell polish, chat header, provider/model/account selectors, composer, message list with provider badges + switch dividers, theme switcher — all on mock providers |
 | 3 | Database | ✅ Done (2026-08-25) | Full schema migration + RLS + seeds + storage policies; conversation/message persistence; recents, rename/archive/delete, search; project CRUD |
 | 4 | Provider Core | ✅ Done (2026-08-25) | `packages/provider-core`: adapter interface, registry, event bus, normalized errors, mock adapter; chat wired through the registry |
-| 5 | Browser Extension Foundation | ⬜ Next | `apps/extension`: MV3, service worker, secure messaging, allowlist, connection status only |
-| 6 | First Provider Proof of Concept | ⬜ | **Compliance gate** — see below |
+| 5 | Browser Extension Foundation | ✅ Done (2026-08-25) | `apps/extension`: MV3, service worker, origin-validated messaging, allowlist, tab-presence detection only; portal status card |
+| 6 | First Provider Proof of Concept | ⬜ Next | **Compliance gate resolved** — see below |
 | 7 | Second Provider | ⬜ | Provider A → Master Conversation → Provider B |
 | 8 | Context Handoff | ⬜ | Strategies A–D, rolling summaries, switch events |
 | 9 | Production Hardening | ⬜ | Monitoring, retries, security review, indexes |
@@ -57,6 +57,16 @@ Acceptance criteria (PRD §55): sign-in/sign-out and route protection are implem
 - `MockAdapter`: clearly-labeled simulated replies/streaming (PRD §34); the only adapter — no website-specific automation anywhere (M4 requirement)
 - Web: `lib/providers/registry.ts` builds the registry from the catalog; ChatView sends through `adapter.sendMessage` (stop = abort), `failed` message state, provider events (`provider_switched`, `model_changed`, `request_failed`) persist to `provider_events` via the event bus
 - Integration status stays `disabled` for every real provider pending the M6 gate
+
+## Milestone 5 — delivered scope
+
+- `apps/extension` (`@uaw/extension`): Manifest V3, zero `permissions`/`host_permissions`, esbuild dev build (`pnpm --filter @uaw/extension build` → `dist/`, load unpacked)
+- Content-script registry + explicit domain allowlist (claude.ai, chatgpt.com — MVP only, PRD §29)
+- `detect.ts`: passive tab-presence detection only — never reads page content, cookies or credentials, never interacts with provider pages
+- Service worker: tracks provider tabs, validates every sender (extension id + origin allowlist), answers `GET_STATUS`/`CHECK_PROVIDER`; automation-type protocol messages (`SEND_PROMPT`, `STOP_GENERATION`, `GET_MODELS`) are answered with `UNSUPPORTED_ACTION` by design
+- Portal bridge content script ↔ web app via `window.postMessage` with origin + envelope validation on both sides (PRD §28)
+- Web: Settings → Browser extension card shows connection + provider tab status
+- Popup lists open provider tabs
 
 ## Milestone 6 compliance gate
 

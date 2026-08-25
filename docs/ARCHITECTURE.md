@@ -8,13 +8,29 @@ pnpm workspaces:
 
 ```text
 apps/web                @uaw/web           — Next.js portal
+apps/extension          @uaw/extension     — MV3 companion (tab-presence detection only; esbuild dev build)
 packages/types          @uaw/types         — shared TypeScript types (TS source via transpilePackages)
 packages/provider-core  @uaw/provider-core — adapter interface, registry, events, errors, mock adapter
 supabase/               migrations + seed (applied to the hosted Supabase project)
 docs/                   product + engineering docs
 ```
 
-Packages planned but intentionally not created yet (their milestones): `apps/extension` (M5), `packages/ui`, `packages/config`, `packages/utils` (when first needed).
+Packages planned but intentionally not created yet (when first needed): `packages/ui`, `packages/config`, `packages/utils`.
+
+## Browser extension (apps/extension)
+
+```text
+manifest.json                     → MV3, zero permissions, allowlisted content scripts
+src/providers/registry.ts         → provider domain allowlist + portal origins
+src/messaging/protocol.ts         → typed PRD §28 messages (+ postMessage envelopes)
+src/background/service-worker.ts  → tab-presence map, sender validation, status answers
+src/content/detect.ts             → passive provider-tab announcement (no page access)
+src/content/portal-bridge.ts      → portal page ↔ service worker relay (origin-checked)
+src/popup/                        → provider tab status popup
+build.mjs                         → esbuild → dist/ (chrome://extensions, Load unpacked)
+```
+
+Web-side counterpart: `apps/web/src/lib/extension/client.ts` + the Settings card.
 
 ## Web app (apps/web)
 

@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/settings/theme-toggle";
+import { ExtensionStatusCard } from "@/components/settings/extension-status";
 
 export const metadata = {
   title: "Settings",
@@ -48,9 +49,22 @@ export default async function SettingsPage() {
           <CardTitle>AI providers</CardTitle>
           <CardDescription>
             Connect Claude and ChatGPT accounts, pick defaults, and manage
-            connections — arrives with Milestones 3–6.
+            connections — arrives with Milestone 6.
           </CardDescription>
         </CardHeader>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Browser extension</CardTitle>
+          <CardDescription>
+            Optional companion that reports which provider tabs are open.
+            Detection only — it never automates provider sites.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ExtensionStatusCard />
+        </CardContent>
       </Card>
 
       <Card>

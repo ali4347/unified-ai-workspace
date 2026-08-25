@@ -32,9 +32,15 @@ Integration statuses: `supported | experimental | disabled | manual | official_a
 
 Each adapter must pass a written ToS review before its status may be set to anything other than `disabled`. Mock adapters are used for all development.
 
-## Browser extension (Milestone 5+)
+## Browser extension (Milestone 5)
 
-Minimum host permissions, explicit domain allowlist, origin-validated messaging, credentials never exposed to the web app (PRD §29). The extension is not permission to bypass provider restrictions (§27).
+Implemented posture (`apps/extension`):
+
+- Manifest V3 with **zero** `permissions` and `host_permissions`; content scripts run only on the explicit allowlist (claude.ai, chatgpt.com, the portal origins).
+- Detection only: the provider content script announces tab presence. It never reads page content, cookies, or credentials, and never interacts with provider pages.
+- The service worker validates every message sender (extension id, then origin against the provider/portal allowlist) and answers automation-type protocol messages (`SEND_PROMPT`, `STOP_GENERATION`, `GET_MODELS`) with `UNSUPPORTED_ACTION` — no automation exists to invoke.
+- Portal ↔ extension messaging uses `window.postMessage` with origin and envelope validation on both ends; no credentials ever cross this channel.
+- The extension is not permission to bypass provider restrictions (PRD §27).
 
 ## Release checklist (PRD §59)
 

@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Unified AI Workspace Companion",
+  "version": "0.1.0",
+  "description": "Reports which AI provider tabs are open to your Unified AI Workspace portal. Detection only — no automation of provider sites.",
+  "permissions": [],
+  "host_permissions": [],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://claude.ai/*", "https://chatgpt.com/*"],
+      "js": ["detect.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://unified-ai-workspace-web.vercel.app/*",
+        "http://localhost:3000/*"
+      ],
+      "js": ["portal-bridge.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Unified AI Workspace"
+  }
+}
