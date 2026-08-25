@@ -10,8 +10,8 @@ export const metadata: Metadata = {
     "One workspace above your AI providers. Start with one AI. Switch to another. Keep the same work.",
 };
 
-// Applies the theme before first paint to avoid a flash. Full Light/Dark/System
-// switcher UI ships with Milestone 2 (PRD §40); until then we follow the system.
+// Applies the theme before first paint to avoid a flash. Must stay in sync
+// with the "uaw-theme" preference written by src/hooks/use-theme.ts (PRD §40).
 const themeScript = `(function () {
   try {
     var stored = localStorage.getItem("uaw-theme");

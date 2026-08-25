@@ -52,8 +52,15 @@ export function AppShell({
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Top bar: expand button (desktop, when collapsed) + menu (mobile) */}
-        <header className="flex h-12 shrink-0 items-center gap-2 px-3">
+        {/* Top bar: expand button (desktop, when collapsed) + menu (mobile).
+            Hidden on desktop while the sidebar is expanded so pages own the
+            full height (the chat header sits directly at the top). */}
+        <header
+          className={cn(
+            "flex h-12 shrink-0 items-center gap-2 px-3",
+            !collapsed && "md:hidden"
+          )}
+        >
           <Button
             variant="ghost"
             size="icon"

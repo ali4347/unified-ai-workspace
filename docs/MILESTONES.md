@@ -4,9 +4,9 @@ Source: [PRD.md §60](PRD.md). One milestone at a time (PRD rules 2, 18). Commit
 
 | # | Milestone | Status | Notes |
 | --- | --- | --- | --- |
-| 1 | Foundation | ✅ Done (2026-08-24) | Monorepo, Next.js, Tailwind v4, shadcn base, Supabase clients, env config, auth (Google + magic link), protected dashboard, profiles table + RLS |
-| 2 | Core UI | ⬜ Next | App shell polish, chat header, provider/model/account selectors, composer, message list, theme switcher — mock providers |
-| 3 | Database | ⬜ | Full schema (providers, models, accounts, projects, conversations, messages, attachments, sessions, devices, events), RLS, CRUD |
+| 1 | Foundation | ✅ Done (2026-08-24) | Monorepo, Next.js, Tailwind v4, shadcn base, Supabase clients, env config, auth (Google + magic link), protected dashboard, profiles table + RLS. Verified in production 2026-08-25 (Google OAuth + Supabase live at https://unified-ai-workspace-web.vercel.app) |
+| 2 | Core UI | ✅ Done (2026-08-25) | App shell polish, chat header, provider/model/account selectors, composer, message list with provider badges + switch dividers, theme switcher — all on mock providers |
+| 3 | Database | ⬜ Next | Full schema (providers, models, accounts, projects, conversations, messages, attachments, sessions, devices, events), RLS, CRUD |
 | 4 | Provider Core | ⬜ | `packages/provider-core`: adapter interface, registry, connection state, normalized errors, provider events, mock adapters |
 | 5 | Browser Extension Foundation | ⬜ | `apps/extension`: MV3, service worker, secure messaging, allowlist, connection status only |
 | 6 | First Provider Proof of Concept | ⬜ | **Compliance gate** — see below |
@@ -27,7 +27,18 @@ Source: [PRD.md §60](PRD.md). One milestone at a time (PRD rules 2, 18). Commit
 - `supabase/migrations/20260824120000_profiles.sql`: profiles table, RLS policies, auto-create trigger on signup
 - Docs: PRD, ARCHITECTURE, SECURITY, PROVIDER_ADAPTERS, MILESTONES
 
-Acceptance criteria (PRD §55): sign-in/sign-out and route protection are implemented; final verification of the Google flow and RLS happens against the user's real Supabase project once env vars are set.
+Acceptance criteria (PRD §55): sign-in/sign-out and route protection are implemented; the Google flow and Supabase connection were verified on the production deployment (2026-08-25).
+
+## Milestone 2 — delivered scope
+
+- Chat header with the top AI selector (models grouped by provider from the mock catalog, PRD §15) and per-provider account selector (PRD §16) — Phase 2 providers visible but unselectable
+- Mock provider catalog + mock chat engine in `apps/web/src/lib/providers/` (no provider logic in UI components); clearly labeled mock replies with simulated streaming, replaced by the adapter registry at Milestone 4
+- Master Conversation message list: user/assistant turns, provider badge per assistant message (PRD §24), "provider changed" dividers (PRD §3), copy, stop generation, message statuses (PRD §22–23)
+- Composer: multiline, Enter/Shift+Enter, auto-grow, stop button; attachments stay disabled until Milestone 3
+- Theme switcher light/dark/system in Settings (PRD §37, §40), persisted to `localStorage("uaw-theme")` in sync with the no-flash script
+- App shell polish: empty desktop header strip removed when the sidebar is expanded
+- Shared types: `ModelInfo`, `ProviderAccountInfo`, `ProviderSelection` in `@uaw/types`
+- Not included by design: persistence (M3), real adapters/registry (M4), search (M3)
 
 ## Milestone 6 compliance gate
 

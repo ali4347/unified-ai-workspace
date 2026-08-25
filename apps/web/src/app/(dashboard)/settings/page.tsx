@@ -7,6 +7,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/settings/theme-toggle";
 
 export const metadata = {
   title: "Settings",
@@ -56,10 +57,13 @@ export default async function SettingsPage() {
         <CardHeader>
           <CardTitle>General</CardTitle>
           <CardDescription>
-            Theme (light/dark/system), language and default project — arrives
-            with Milestone 2.
+            Language and default project settings arrive with Milestone 3.
           </CardDescription>
         </CardHeader>
+        <CardContent className="flex items-center justify-between gap-4">
+          <p className="text-sm font-medium">Theme</p>
+          <ThemeToggle />
+        </CardContent>
       </Card>
     </div>
   );

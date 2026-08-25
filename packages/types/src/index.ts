@@ -46,6 +46,31 @@ export const PROVIDERS: readonly ProviderMeta[] = [
   { slug: "copilot", name: "Microsoft Copilot", phase: "phase2" },
 ] as const;
 
+/** A model offered by a provider. Sourced from provider configuration
+ * (mock catalog until Milestone 3 moves this to the database, PRD §15, §31). */
+export interface ModelInfo {
+  id: string;
+  providerSlug: ProviderSlug;
+  name: string;
+  description?: string;
+}
+
+/** A connected provider account as shown in selectors (PRD §16).
+ * Metadata only — never credentials (PRD §19). */
+export interface ProviderAccountInfo {
+  id: string;
+  providerSlug: ProviderSlug;
+  email: string;
+  status: ProviderConnectionState;
+}
+
+/** The active provider/model/account of a conversation (PRD §15–16, §31). */
+export interface ProviderSelection {
+  providerSlug: ProviderSlug;
+  modelId: string;
+  accountId: string;
+}
+
 // ---------------------------------------------------------------------------
 // Messages (PRD §23)
 // ---------------------------------------------------------------------------

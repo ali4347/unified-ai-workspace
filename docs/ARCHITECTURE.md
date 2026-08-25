@@ -27,16 +27,22 @@ src/app/
   auth/confirm/route.ts       → magic-link token_hash fallback (verifyOtp)
   auth/signout/route.ts       → POST sign-out
   (dashboard)/layout.tsx      → server-side auth check + app shell (force-dynamic)
-  (dashboard)/chat/           → chat empty state + placeholder composer
+  (dashboard)/chat/           → ChatView: Master Conversation UI on mock providers (M2)
   (dashboard)/projects/       → placeholder (M3)
-  (dashboard)/settings/       → placeholder (account info)
+  (dashboard)/settings/       → account info + theme switcher
 src/components/
-  ui/                         → shadcn-style primitives (button, input, label, card)
+  ui/                         → shadcn-style primitives (button, input, label, card, popover)
   layout/app-shell.tsx        → client shell: sidebar + mobile drawer + collapse
   sidebar/sidebar.tsx         → sidebar content (nav, recents placeholder, profile, signout)
   auth/                       → login form, setup notice
+  chat/                       → chat-view (state owner), composer, message-list
+  providers/                  → ai-selector, account-selector, provider-badge
+  settings/theme-toggle.tsx   → light/dark/system switcher
+src/hooks/use-theme.ts        → theme preference ↔ localStorage("uaw-theme") + .dark class
 src/lib/
   env.ts                      → isSupabaseConfigured()
+  providers/catalog.ts        → mock provider/model/account catalog (→ DB at M3, registry at M4)
+  providers/mock-chat.ts      → mock reply engine, simulated cancellable streaming (→ M4)
   supabase/client.ts          → createBrowserClient
   supabase/server.ts          → createServerClient over next/headers cookies (async)
   supabase/middleware.ts      → updateSession(): session refresh + route protection
@@ -73,6 +79,14 @@ Login page
 | Missing env → setup notice, not crash | Developer/deployment ergonomics; PRD §62 |
 | `@uaw/types` consumed as TS source | No build step; `transpilePackages` in next.config |
 | No provider automation code anywhere yet | M4 uses mocks; M6 integration mode is gated on compliance review (see MILESTONES.md) |
+| Provider/model/account data from `lib/providers/catalog.ts` | PRD §15 — never hard-coded in UI components; moves to the database at M3 and behind the registry at M4 |
+| Chat state local to `ChatView` (React state, no Zustand yet) | PRD §46 — avoid unnecessary global state; persistence (M3) will reshape it anyway |
+| Hand-rolled `Popover` primitive | PRD rule 3 — no Radix until a component genuinely needs it |
+| Mock replies clearly labeled, simulated streaming | PRD §34 — never pretend a real provider is streaming; SECURITY.md mock policy |
+
+## Deployment
+
+Production: https://unified-ai-workspace-web.vercel.app (Vercel) + hosted Supabase. Google OAuth and the Supabase connection were verified live on 2026-08-25.
 
 ## Environment
 
