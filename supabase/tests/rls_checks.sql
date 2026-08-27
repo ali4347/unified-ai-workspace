@@ -83,6 +83,13 @@ select
   (select count(*) from public.models)                                     as models,
   (select count(*) from storage.objects where bucket_id = 'attachments')   as storage_objects;
 
+-- The harness canary (§2) reads this table AFTER `set local role authenticated`,
+-- and the owner-created temp table carries no grant for that role. Grant read
+-- access explicitly. Session-local by construction: the ACL lives on the temp
+-- table itself, so it vanishes with the table (PART 3 drop / session end) and
+-- touches nothing persistent.
+grant select on table _rls_baseline to authenticated;
+
 
 -- ===========================================================================
 -- PART 1 — the suite (transactional, always rolled back)
