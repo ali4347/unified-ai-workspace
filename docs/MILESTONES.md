@@ -101,6 +101,17 @@ Acceptance criteria (PRD §55): sign-in/sign-out and route protection are implem
 - Tests: vitest (`pnpm test`) — context handoff strategies/summaries, catalog building/selection, proxy validation/rate limiting; proxy validation extracted to a pure module for testability. The suite has since grown (model-id drift guard at M-compat, message parsing at release polish) — see the release record below for the current count
 - Security review: PRD §59 checklist walked and recorded in SECURITY.md (all items pass; extension runs zero permissions)
 
+## Product change — Workspace Models + Bring Your Own API (2026-08-27)
+
+The provider UX was rebuilt after the milestone sequence. Manual copy/paste is retired as a product mode; every live turn is automatic and streamed.
+
+- **Workspace Models** (default): the app owner's own provider credential, server-only (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`, never `NEXT_PUBLIC_`). A signed-in user chats immediately with no key and no setup. Modelled as `selection.accountId === null`, so no schema change was needed for the mode.
+- **Bring Your Own API**: the user's own OpenAI/Anthropic developer key, browser-held, billed to their own provider account.
+- Consumer ChatGPT/Claude subscriptions are never used — no session automation, no scraping, no consumer quota.
+- Per-model availability policy in code (`MODEL_POLICY`); server-side enforcement of availability, workspace configuration and a per-user daily quota.
+- Legacy `manual` messages and `connected_accounts` rows stay readable and are excluded from selection rather than deleted.
+- **Migration `20260827100000_workspace_usage_quota.sql` is pending** — usage control table + `security definer` counter function. Until it is applied the quota is not enforced (the server logs a warning and allows the request).
+
 ## Milestone 10 — deployment state
 
 - Code: pushed to GitHub `main` → Vercel builds and deploys https://unified-ai-workspace-web.vercel.app automatically (env vars configured since M1)

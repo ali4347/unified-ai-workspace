@@ -2,6 +2,12 @@
 
 Multi-provider AI portal. The primary object is a **Master Conversation** owned by this app; providers (Claude, ChatGPT, later Gemini/Perplexity/Copilot) participate in it.
 
+Two connection modes, both automatic and streamed:
+- **Workspace Models** — server-held credential (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`, server-only), metered per user per day. Modelled as `selection.accountId === null`.
+- **Bring Your Own API** — the user's own developer API key, held in their browser only.
+
+Consumer ChatGPT/Claude subscriptions are never used: no session automation, no scraping. Manual copy/paste mode is retired (historical messages still render).
+
 **Read `docs/PRD.md` before changing architecture** (PRD rule 1). Track progress in `docs/MILESTONES.md` — implement one milestone at a time, never future milestones prematurely (rules 2, 18).
 
 ## Commands

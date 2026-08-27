@@ -1,6 +1,19 @@
 # Provider adapters
 
-Adapters are the only place provider-specific logic may live (PRD rules 6, 12). The rest of the app talks to the common interface and the registry, both implemented in `packages/provider-core` (Milestone 4). Streaming uses an `onChunk` callback; cancellation uses `AbortSignal`.
+Adapters are the only place provider-specific logic may live (PRD rules 6, 12). The rest of the app talks to the common interface and the registry, both implemented in `packages/provider-core`. Streaming uses an `onChunk` callback; cancellation uses `AbortSignal`.
+
+## Connection modes
+
+Every live turn is automatic and streamed. `apps/web/src/lib/providers/registry.ts` is the single routing layer:
+
+| Mode | Selected by | Credential | Billed to | Metered |
+| --- | --- | --- | --- | --- |
+| **Workspace Models** | `selection.accountId === null` | server-only env var, never in the browser | the app owner | yes — per user per UTC day |
+| **Bring Your Own API** | a `connected_accounts` row | the user's own key, browser-held | the user's provider account | no |
+
+Both modes call the same same-origin proxy route (`/api/providers/{slug}`), which holds all provider-specific server logic. Absence of the `x-provider-key` header *is* workspace mode; `resolveCredential()` then enforces model availability for the mode, workspace configuration, and the daily quota — none of which is client-trusted.
+
+`manual` mode (user copy/paste) is **retired**. Historical messages and `connected_accounts` rows created under it remain readable and are excluded from selection rather than deleted. Consumer ChatGPT/Claude subscriptions are never used: no session automation, no scraping, no consumer quota.
 
 ## Common interface (PRD §25)
 
@@ -42,14 +55,16 @@ The registry maps slug → `{ enabled, integrationStatus, adapter }`. UI reads t
 
 ## Current adapter status
 
-| Provider | Status | Planned milestone | Notes |
+| Provider | Workspace Models | Bring Your Own API | Notes |
 | --- | --- | --- | --- |
-| Mock | active (M4 ✅) | M4 | `MockAdapter` in provider-core drives development; clearly labeled, never impersonates a real provider; used whenever no account is connected |
-| Claude | `manual` + optional `official_api` (M6 ✅) | M6 | See the M6 compliance record below |
-| ChatGPT | `manual` + optional `official_api` (M7 ✅) | M7 | Same record applies (OpenAI consumer web app not automated; official OpenAI API with the user's own browser-held key via `/api/providers/chatgpt`); sign-off 2026-08-25 |
-| Gemini | `disabled` | Phase 2 | — |
-| Perplexity | `disabled` | Phase 2 | — |
-| Copilot | `disabled` | Phase 2 | — |
+| Claude (Anthropic API) | ✅ Sonnet, Haiku | ✅ all four models | Frontier tiers (Opus, Fable) are BYOK-only until the owner opts them in |
+| ChatGPT (OpenAI API) | ✅ mini, balanced | ✅ all three models | Flagship is BYOK-only until the owner opts it in |
+| Gemini | — | — | Phase 2 |
+| Perplexity | — | — | Phase 2 |
+| Copilot | — | — | Phase 2 |
+| Mock | dev/test only | — | Opt-in via `NEXT_PUBLIC_UAW_ENABLE_MOCK_PROVIDERS`; unreachable in production |
+
+Per-model availability lives in `MODEL_POLICY` (`lib/providers/model-map.ts`) and is enforced server-side by `resolveCredential()`.
 
 ## Milestone 6 compliance record — Claude (2026-08-25)
 
@@ -58,6 +73,8 @@ The registry maps slug → `{ enabled, integrationStatus, adapter }`. UI reads t
 3. **Failure modes** mapped to normalized codes in the proxy (`LOGIN_REQUIRED` for invalid/missing key, `MODEL_UNAVAILABLE`, `USAGE_LIMIT` for provider rate limits, `NETWORK_ERROR`) and surfaced by `HttpStreamAdapter`.
 4. **Usage limits:** surfaced as `USAGE_LIMIT` + the user can switch providers; never bypassed (PRD §35).
 5. **Product-owner sign-off:** recorded 2026-08-25 — mode decision "Manual + Official API" approved by the product owner (session decision, AskUserQuestion).
+
+**Superseded 2026-08-27** by the Workspace Models / Bring Your Own API product change. The compliance conclusions above still hold — official developer APIs only, no consumer-site automation — but `manual` is retired as a user-facing mode, and the owner's own API credential (Workspace Models) joins the user's own credential (BYOK) as a supported path. Both are official-API paths; neither touches a consumer subscription.
 
 Implementation notes: client half = `HttpStreamAdapter` (provider-core, generic); server half = `apps/web/src/app/api/providers/claude` + `lib/providers/server/claude.ts` (the only place Claude-specific logic lives). Requests for models that support it (`claude-opus-5`, `claude-fable-5`) enable Anthropic's server-side refusal fallbacks (`fallbacks: "default"`) so a safety decline reroutes to a fallback model instead of dead-ending.
 
