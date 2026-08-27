@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
+import { fallbackApiModel } from "@/lib/providers/model-map";
 import {
   errorResponse,
   readProviderKey,
@@ -15,18 +16,15 @@ import {
  * the official Anthropic API using the user's own key, forwarded per request
  * from their browser. The key is never stored or logged (PRD §19, §48).
  *
- * `claude-opus-5` requests opt into server-side refusal fallbacks
- * (`fallbacks: "default"`) so a safety decline reroutes instead of dead-ending.
+ * Model ids come from the database (`models.capabilities.api_model`) and fall
+ * back to the verified table in lib/providers/model-map.ts.
  */
 
 const MAX_OUTPUT_TOKENS = 16_000;
 
-// Fallback mapping if the DB migration hasn't been applied yet.
-const FALLBACK_API_MODELS: Record<string, string> = {
-  "claude-sonnet": "claude-sonnet-5",
-  "claude-opus": "claude-opus-5",
-  "claude-haiku": "claude-haiku-4-5",
-};
+/** Models that support Anthropic's server-side refusal fallbacks, so a safety
+ * decline reroutes to a fallback model instead of dead-ending. */
+const SERVER_SIDE_FALLBACK_MODELS = new Set(["claude-opus-5", "claude-fable-5"]);
 
 export async function handleClaudeProxy(request: Request): Promise<Response> {
   const userId = await requirePortalUser();
@@ -65,7 +63,7 @@ export async function handleClaudeProxy(request: Request): Promise<Response> {
 
   const apiModel =
     (await resolveApiModel("claude", body.model as string)) ??
-    FALLBACK_API_MODELS[body.model as string];
+    fallbackApiModel("claude", body.model as string);
   if (!apiModel) {
     return errorResponse(404, "MODEL_UNAVAILABLE", "Unknown Claude model");
   }
@@ -77,7 +75,7 @@ export async function handleClaudeProxy(request: Request): Promise<Response> {
 
   try {
     const stream =
-      apiModel === "claude-opus-5"
+      SERVER_SIDE_FALLBACK_MODELS.has(apiModel)
         ? client.beta.messages.stream({
             model: apiModel,
             max_tokens: MAX_OUTPUT_TOKENS,
@@ -157,6 +155,16 @@ function mapAnthropicError(error: unknown): NextResponse {
   }
   if (error instanceof Anthropic.RateLimitError) {
     return errorResponse(429, "USAGE_LIMIT", "Anthropic rate limit reached");
+  }
+  // A 400 here is usually a model the account cannot use on its current plan
+  // or data-retention settings — report it as unavailable so the user can
+  // switch model or provider instead of seeing a generic failure.
+  if (error instanceof Anthropic.BadRequestError) {
+    return errorResponse(
+      400,
+      "MODEL_UNAVAILABLE",
+      "This model is not available for your Anthropic account"
+    );
   }
   if (error instanceof Anthropic.APIError) {
     return errorResponse(502, "NETWORK_ERROR", "Anthropic API error");

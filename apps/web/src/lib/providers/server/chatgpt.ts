@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { fallbackApiModel } from "@/lib/providers/model-map";
 import {
   errorResponse,
   readProviderKey,
@@ -14,16 +15,15 @@ import {
  * from the official OpenAI Chat Completions API using the user's own key,
  * forwarded per request from their browser — never stored or logged
  * (PRD §19, §48). Raw fetch + SSE parsing; no SDK dependency needed.
+ *
+ * Endpoint choice re-verified 2026-08-27: /v1/chat/completions is not
+ * deprecated and every mapped GPT-5.6 model lists it as supported.
+ * Model ids come from the database (`models.capabilities.api_model`) and fall
+ * back to the verified table in lib/providers/model-map.ts.
  */
 
 const OPENAI_BASE = "https://api.openai.com/v1";
 const MAX_OUTPUT_TOKENS = 16_000;
-
-// Fallback mapping if the DB migration hasn't been applied yet.
-const FALLBACK_API_MODELS: Record<string, string> = {
-  "chatgpt-flagship": "gpt-5.1",
-  "chatgpt-mini": "gpt-5.1-mini",
-};
 
 export async function handleChatGptProxy(request: Request): Promise<Response> {
   const userId = await requirePortalUser();
@@ -62,7 +62,7 @@ export async function handleChatGptProxy(request: Request): Promise<Response> {
 
   const apiModel =
     (await resolveApiModel("chatgpt", body.model as string)) ??
-    FALLBACK_API_MODELS[body.model as string];
+    fallbackApiModel("chatgpt", body.model as string);
   if (!apiModel) {
     return errorResponse(404, "MODEL_UNAVAILABLE", "Unknown ChatGPT model");
   }
@@ -163,6 +163,15 @@ function mapOpenAiError(status: number): NextResponse {
   }
   if (status === 404) {
     return errorResponse(404, "MODEL_UNAVAILABLE", "Model not available");
+  }
+  // OpenAI answers a retired or inaccessible model id with 400 — surface it as
+  // unavailable so the user can pick another model instead of a generic error.
+  if (status === 400) {
+    return errorResponse(
+      400,
+      "MODEL_UNAVAILABLE",
+      "This model is not available for your OpenAI account"
+    );
   }
   if (status === 429) {
     return errorResponse(429, "USAGE_LIMIT", "OpenAI rate limit or quota reached");

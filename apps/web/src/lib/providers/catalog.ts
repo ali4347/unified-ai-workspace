@@ -180,9 +180,11 @@ export const FALLBACK_CATALOG: Catalog = [
   {
     meta: meta("claude"),
     enabled: true,
+    // Order and labels mirror supabase/migrations/20260825170000_refresh_provider_model_ids.sql.
     models: [
       model("claude", "claude-sonnet", "Sonnet", "Balanced"),
-      model("claude", "claude-opus", "Opus", "Most capable"),
+      model("claude", "claude-opus", "Opus", "Complex agentic work"),
+      model("claude", "claude-fable", "Fable", "Highest capability"),
       model("claude", "claude-haiku", "Haiku", "Fastest"),
     ],
     accounts: [],
@@ -191,7 +193,8 @@ export const FALLBACK_CATALOG: Catalog = [
     meta: meta("chatgpt"),
     enabled: true,
     models: [
-      model("chatgpt", "chatgpt-flagship", "GPT flagship", "Default"),
+      model("chatgpt", "chatgpt-flagship", "GPT flagship", "Frontier"),
+      model("chatgpt", "chatgpt-balanced", "GPT balanced", "Balanced cost"),
       model("chatgpt", "chatgpt-mini", "GPT mini", "Lightweight"),
     ],
     accounts: [],

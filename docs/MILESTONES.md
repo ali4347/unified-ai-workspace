@@ -73,7 +73,7 @@ Acceptance criteria (PRD §55): sign-in/sign-out and route protection are implem
 - **Gate resolved** (2026-08-25, product owner): Claude integrates via `manual` (default, zero credentials) + optional `official_api` (user-supplied Anthropic key)
 - Manual mode: context package built from the Master Conversation (+ project instructions), copy → user pastes into claude.ai themselves → pastes the reply back; stored as a real Claude reply with a "manual" badge. Zero automation of the provider site
 - Official API mode: `HttpStreamAdapter` (provider-core) → `/api/providers/claude` proxy → official Anthropic SDK. Streaming replies; key from browser localStorage per request, never stored/logged server-side; portal-auth + per-user rate limit on the proxy; normalized error mapping; `claude-opus-5` uses Anthropic server-side refusal fallbacks
-- Model mapping migration: `models.capabilities.api_model` (`claude-sonnet-5`, `claude-opus-5`, `claude-haiku-4-5`); `providers.integration_type = 'manual'` for Claude
+- Model mapping migration: `models.capabilities.api_model` (`claude-sonnet-5`, `claude-opus-5`, `claude-haiku-4-5`); `providers.integration_type = 'manual'` for Claude. Current mapping (incl. `claude-fable-5`) is the one in the 2026-08-27 refresh migration — see PROVIDER_ADAPTERS.md → Provider API model ids
 - Settings → AI providers: connect (manual / API key with validation), list, disconnect; account selector shows mode chips; "Connect account" links to Settings
 - Messages record how they were produced (`metadata.integration`: mock / manual / official_api); badges label mock and manual replies; mock notice only when no account is selected
 
@@ -81,7 +81,7 @@ Acceptance criteria (PRD §55): sign-in/sign-out and route protection are implem
 
 - ChatGPT enabled with the same gate decision: `manual` + optional `official_api`
 - `/api/providers/chatgpt`: OpenAI Chat Completions proxy — raw fetch + SSE re-streaming (no SDK dependency), same shared plumbing (portal auth, rate limit, validation, normalized errors), user key browser-held per request
-- Migration: `providers.integration_type='manual'` for chatgpt; `models.capabilities.api_model` → `gpt-5.1` / `gpt-5.1-mini` (update via migration if OpenAI renames)
+- Migration: `providers.integration_type='manual'` for chatgpt; `models.capabilities.api_model` originally `gpt-5.1` / `gpt-5.1-mini` — **superseded** by the 2026-08-27 refresh migration after OpenAI retired the GPT-5.1 family (now `gpt-5.6-sol` / `gpt-5.6-terra` / `gpt-5.6-luna`)
 - PRD §58 provider-switching criteria satisfied end-to-end: Provider A messages → switch in header → Provider B receives the built context (system note + full history) and continues; every reply records provider/model/account and mode
 
 ## Milestone 8 — delivered scope
@@ -105,7 +105,7 @@ Acceptance criteria (PRD §55): sign-in/sign-out and route protection are implem
 
 - Code: pushed to GitHub `main` → Vercel builds and deploys https://unified-ai-workspace-web.vercel.app automatically (env vars configured since M1)
 - **Pending operator step (requires Supabase dashboard access):** apply the post-M1 migrations to the hosted project, in order —
-  `20260825090000_core_schema.sql`, `20260825140000_claude_integration.sql`, `20260825150000_chatgpt_integration.sql`, `20260825160000_search_indexes.sql`
+  `20260825090000_core_schema.sql`, `20260825140000_claude_integration.sql`, `20260825150000_chatgpt_integration.sql`, `20260825160000_search_indexes.sql`, `20260825170000_refresh_provider_model_ids.sql`
   (SQL Editor, or `supabase link` + `supabase db push`), then run `supabase/tests/rls_checks.sql` once (self-rolling-back) to verify isolation. Until then the deployed app degrades gracefully: mock chat works, persistence/search/accounts stay off.
 - Extension ships as a development build only (`pnpm --filter @uaw/extension build` → load `apps/extension/dist` unpacked), per PRD §60 M10
 

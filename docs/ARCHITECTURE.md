@@ -71,6 +71,7 @@ src/lib/
   extension/client.ts         → postMessage client for the companion extension
   providers/catalog.ts        → catalog built from DB rows (+ static fallback pre-migration)
   providers/registry.ts       → registry with per-account routing: mock / official_api / manual
+  providers/model-map.ts      → catalog id → provider API model id (verified; DB is runtime source)
   providers/key-store.ts      → browser-only localStorage for user API keys (never server-side)
   providers/server/proxy.ts   → shared proxy plumbing (auth, rate limit, validation, model map)
   providers/server/claude.ts  → server half of the Claude official_api adapter (Anthropic SDK)
@@ -124,6 +125,8 @@ Login page
 | Registry built client-side from the catalog | Chat runs in the browser; per-account routing picks mock / official_api / manual behind the same interface |
 | `manual` mode short-circuits in the UI, not the adapter | `sendMessage` cannot model a user-mediated round trip; the handoff panel owns it (PRD §7 manual) |
 | User API keys in browser localStorage only, proxied per request | PRD §19 — nothing credential-like server-side; provider-specific server logic lives only in the proxy route (adapter server-half) |
+| Provider API model ids live in `models.capabilities.api_model`, mirrored in `model-map.ts` | Providers retire ids on their own schedule; a DB value can be refreshed by migration without a deploy, and the mirrored table keeps the app working pre-migration. A test parses the migration and fails on drift |
+| Model id changes ship as new forward-only migrations | Rule 9/15 — committed migrations are never edited; old mappings are archived in `capabilities.deprecated_api_models`, never deleted |
 
 ## Deployment
 

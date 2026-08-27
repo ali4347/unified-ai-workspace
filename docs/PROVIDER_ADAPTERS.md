@@ -59,4 +59,28 @@ The registry maps slug → `{ enabled, integrationStatus, adapter }`. UI reads t
 4. **Usage limits:** surfaced as `USAGE_LIMIT` + the user can switch providers; never bypassed (PRD §35).
 5. **Product-owner sign-off:** recorded 2026-08-25 — mode decision "Manual + Official API" approved by the product owner (session decision, AskUserQuestion).
 
-Implementation notes: client half = `HttpStreamAdapter` (provider-core, generic); server half = `apps/web/src/app/api/providers/claude` + `lib/providers/server/claude.ts` (the only place Claude-specific logic lives). `claude-opus-5` requests enable Anthropic's server-side refusal fallbacks (`fallbacks: "default"`) so a safety decline reroutes to a fallback model instead of dead-ending.
+Implementation notes: client half = `HttpStreamAdapter` (provider-core, generic); server half = `apps/web/src/app/api/providers/claude` + `lib/providers/server/claude.ts` (the only place Claude-specific logic lives). Requests for models that support it (`claude-opus-5`, `claude-fable-5`) enable Anthropic's server-side refusal fallbacks (`fallbacks: "default"`) so a safety decline reroutes to a fallback model instead of dead-ending.
+
+## Provider API model ids
+
+Catalog model ids (`chatgpt-flagship`, `claude-sonnet`, …) are stable app-level keys. The provider-side id they resolve to lives in `models.capabilities.api_model`, with the same table mirrored in `apps/web/src/lib/providers/model-map.ts` as a pre-migration fallback. `model-map.test.ts` fails the build if the two drift apart or if a retired id reappears.
+
+**Last verified against official documentation: 2026-08-27.**
+
+| Catalog id | API model id | Source |
+| --- | --- | --- |
+| `claude-sonnet` | `claude-sonnet-5` | [Claude models overview](https://platform.claude.com/docs/en/about-claude/models/overview) |
+| `claude-opus` | `claude-opus-5` | same |
+| `claude-fable` | `claude-fable-5` | same |
+| `claude-haiku` | `claude-haiku-4-5` | same (alias of the pinned `claude-haiku-4-5-20251001`) |
+| `chatgpt-flagship` | `gpt-5.6-sol` | [OpenAI models](https://developers.openai.com/api/docs/models) (alias `gpt-5.6`) |
+| `chatgpt-balanced` | `gpt-5.6-terra` | same |
+| `chatgpt-mini` | `gpt-5.6-luna` | same |
+
+Every OpenAI id above lists `/v1/chat/completions` as supported, which is the endpoint our proxy uses; that endpoint is not deprecated (verified 2026-08-27).
+
+### Re-audit triggers
+
+- **2026-10-15** — Anthropic's earliest retirement commitment for Claude Haiku 4.5. Re-audit before then and map `claude-haiku` to its successor if one has shipped.
+- OpenAI retired the GPT-5.1 family on 2026-07-23 (`gpt-5.1`, `gpt-5.1-mini` and friends). Those ids are listed in `RETIRED_API_MODELS` so they can never be reintroduced silently.
+- Changing a mapping means a **new forward-only migration** — committed migrations are never edited, and model rows are deprecated rather than deleted.
