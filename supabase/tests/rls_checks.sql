@@ -38,12 +38,12 @@
 --   * public.providers/models are reference data: readable by any authenticated
 --                             user, writable only by migrations / service role.
 --
--- OPEN FINDING (documented, deliberately NOT auto-fixed — see README):
---   public.provider_sessions enforces `user_id = auth.uid()` but does not verify
---   that connected_account_id belongs to the caller. PART 1 §11 probes this and
---   reports the current behaviour as a NOTICE instead of asserting, so the suite
---   neither hides the gap nor fails on a policy the product owner has not yet
---   ruled on.
+-- RESOLVED FINDING (2026-08-27):
+--   public.provider_sessions previously enforced only `user_id = auth.uid()`,
+--   letting a user point one of their own session rows at another user's
+--   connected account or extension device. Fixed by
+--   20260825180000_provider_sessions_ownership_chain.sql; §11 now asserts both
+--   chains hard, in both INSERT and UPDATE, with a positive control.
 -- ===========================================================================
 
 
@@ -597,28 +597,56 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
--- §11 provider_sessions ownership chain — PROBE ONLY (open finding)
---     The policy checks user_id but not connected_account_id ownership. This
---     reports the live behaviour instead of asserting, so the suite neither
---     hides the gap nor fails on an undecided policy question.
+-- §11 provider_sessions ownership chains (hard assertions)
+--     Enforced by 20260825180000_provider_sessions_ownership_chain.sql: a
+--     session row must reference a connected_account — and a device, when set —
+--     that belongs to the caller, not just carry the caller's user_id.
 -- ---------------------------------------------------------------------------
 
 do $$
 declare
   a uuid := current_setting('test.uid_a')::uuid;
-  allowed boolean := true;
+  n integer;
+  blocked boolean;
 begin
+  -- INSERT pointing at B's connected account while claiming A's user_id.
+  blocked := false;
   begin
     insert into public.provider_sessions (id, user_id, connected_account_id, status)
     values ('de77de77-0000-4000-8000-0000000000c1', a, 'de77de77-0000-4000-8000-000000000b05', 'active');
-  exception when insufficient_privilege then allowed := false;
+  exception when insufficient_privilege then blocked := true;
   end;
+  perform pg_temp.ok(blocked,
+    'provider_sessions/insert-account-chain: A can CREATE a session referencing B''s connected_account_id — the connected_accounts ownership chain is not enforced');
 
-  if allowed then
-    raise notice 'FINDING provider_sessions/insert-chain: A CAN create a session row referencing B''s connected_account_id (own user_id). No data of B is exposed by this, but the ownership chain is unenforced. See supabase/tests/README.md → Open findings.';
-  else
-    raise notice 'provider_sessions/insert-chain: chain IS enforced — README open finding can be closed.';
-  end if;
+  -- UPDATE an existing own session to point at B's connected account.
+  blocked := false;
+  begin
+    update public.provider_sessions
+       set connected_account_id = 'de77de77-0000-4000-8000-000000000b05'
+     where id = 'de77de77-0000-4000-8000-000000000a06';
+  exception when insufficient_privilege then blocked := true;
+  end;
+  perform pg_temp.ok(blocked,
+    'provider_sessions/update-account-chain: A can REPOINT their own session at B''s connected_account_id');
+
+  -- INSERT pointing at B's extension device (the second ownership chain).
+  blocked := false;
+  begin
+    insert into public.provider_sessions (user_id, connected_account_id, device_id, status)
+    values (a, 'de77de77-0000-4000-8000-000000000a05', 'de77de77-0000-4000-8000-000000000b07', 'active');
+  exception when insufficient_privilege then blocked := true;
+  end;
+  perform pg_temp.ok(blocked,
+    'provider_sessions/insert-device-chain: A can CREATE a session referencing B''s extension device');
+
+  -- Positive control: entirely own chain must still be allowed, so the fix
+  -- cannot pass by simply denying everything.
+  insert into public.provider_sessions (user_id, connected_account_id, device_id, status)
+  values (a, 'de77de77-0000-4000-8000-000000000a05', 'de77de77-0000-4000-8000-000000000a07', 'active');
+  get diagnostics n = row_count;
+  perform pg_temp.ok(n = 1,
+    'provider_sessions/insert-own-chain: A cannot create a session referencing their OWN account and device — the policy is too strict');
 end $$;
 
 -- ---------------------------------------------------------------------------

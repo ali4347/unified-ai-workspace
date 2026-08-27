@@ -17,7 +17,7 @@ The suite prints `RLS checks passed: N/N`. That line only appears if **every** a
 | `messages` | full matrix **plus** the conversation-ownership chain: A may not insert into B's conversation even with their own `user_id` |
 | `attachments` | read own ✔ / read other ✘ / update own ✘ *(immutable by design)* / update other ✘ / delete own ✔ / delete other ✘ / insert own ✔ / insert into B's conversation ✘ / insert-as-other ✘ |
 | `extension_devices` | full matrix |
-| `provider_sessions` | full matrix (+ an ownership-chain probe, see Open findings) |
+| `provider_sessions` | full matrix **plus** both ownership chains: a session may not reference another user's connected account or extension device, on INSERT or UPDATE, with a positive control that a fully-owned chain still works |
 | `providers`, `models` | readable by any authenticated user ✔; insert/update/delete ✘; every model carries an `api_model` mapping |
 | `storage.objects` (`attachments` bucket) | read own ✔ / read other ✘ / update own ✔ / update other ✘ / delete own ✔ / delete other ✘ / upload into own path ✔ / upload into another user's path ✘ |
 | Symmetry | the core isolation checks are repeated as user B, so a green run cannot come from user A simply owning no data |
@@ -88,8 +88,18 @@ Two caveats:
 - Read the **Notices** pane, not just the results grid. The pass line (`RLS checks passed: N/N`), the cleanup confirmation and the `FINDING …` probe are all `RAISE NOTICE` output.
 - Run the file whole. Executing only a highlighted fragment can leave the `begin;` open or skip the `rollback;`.
 
-## Open findings
+## Findings
 
-**`provider_sessions` ownership chain (open).** The insert policy checks `user_id = auth.uid()` but does not verify that `connected_account_id` belongs to the caller, so a user could create a session row pointing at another user's account id if they somehow learned that UUID. No data belonging to the other user is exposed — reads are still filtered by `user_id` — so this is an integrity gap, not a leak.
+### Resolved — `provider_sessions` ownership chain (2026-08-27)
 
-§11 of the suite **probes** this and reports the live behaviour as a `NOTICE` instead of asserting it, so the suite neither hides the gap nor fails on a policy question the product owner has not yet ruled on. Closing it means adding an `exists (select 1 from connected_accounts …)` clause to the insert policy in a new migration — the same shape `messages` and `attachments` already use — and then converting the probe into a hard assertion.
+The M3 policies checked only `user_id = auth.uid()`, so a user could create or update one of their own session rows to reference another user's `connected_account_id` or `device_id` if they learned that UUID. Reads stayed filtered by `user_id`, so nothing leaked — but it let one user's session records claim another user's account, which corrupts `provider_sessions` as an audit surface.
+
+Fixed in `supabase/migrations/20260825180000_provider_sessions_ownership_chain.sql`, which rebuilds only the INSERT and UPDATE policies around the same `exists (…)` pattern `messages` and `attachments` have used since M3. SELECT and DELETE were left untouched. §11 of the suite now asserts both chains hard, on both INSERT and UPDATE, plus a positive control proving a fully-owned chain is still permitted (so the fix cannot pass by denying everything).
+
+### Open — `messages` UPDATE does not re-check the conversation chain
+
+Noticed while fixing the above, **not** changed here because it is outside the approved scope and `messages` is on a live write path.
+
+`messages_insert_own` correctly requires that the target conversation belongs to the caller, but `messages_update_own` is only `using (auth.uid() = user_id) with check (auth.uid() = user_id)`. A user can therefore update one of their own messages to set `conversation_id` to another user's conversation. As with the resolved finding, nothing is disclosed — the other user's `SELECT` is filtered by their own `user_id`, so they never see the moved row — and the mover only relocates a message they already own. It is an integrity gap in the same family.
+
+Closing it would mean a new migration adding the same `exists (…)` clause to the UPDATE policy's `WITH CHECK`. Worth a decision before the extension starts writing session/message rows.

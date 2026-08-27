@@ -14,7 +14,8 @@ Binding rules from PRD §5, §7, §19, §32, §48, §59, §61–62. Violations b
 - RLS enabled on every user-owned table **before the feature is considered done** (PRD rule 10). Current: `profiles`, `connected_accounts`, `projects`, `conversations`, `messages`, `attachments`, `provider_sessions`, `extension_devices`, `provider_events` (owner-only policies on `auth.uid()`); `providers`/`models` are read-only reference tables (select for authenticated, writes only via migrations/service role). `messages`/`attachments` inserts additionally verify ownership of the target conversation.
 - Storage: private `attachments` bucket; object policies require the first path segment to equal `auth.uid()`.
 - The signup trigger (`handle_new_user`) is `security definer` with an empty `search_path` to avoid search-path hijacking.
-- Cross-user access checks: `supabase/tests/rls_checks.sql` (transactional, self-rolling-back) exercises read/update/insert isolation between two users — run it against the target database after applying migrations (PRD §55, §59).
+- Ownership chains: where a user-owned row points at another user-owned row, the policy must verify the parent too, not just `user_id`. `messages` and `attachments` check conversation ownership on INSERT; `provider_sessions` checks `connected_accounts` and `extension_devices` ownership on INSERT and UPDATE (added 2026-08-27 by `20260825180000_provider_sessions_ownership_chain.sql` after the RLS suite found the gap).
+- Cross-user access checks: `supabase/tests/rls_checks.sql` (transactional, self-rolling-back) exercises the full isolation matrix — read/update/delete/insert, own and cross-user, plus storage ownership and reference-table immutability — between two users. Run it against the target database after applying migrations (PRD §55, §59). See `supabase/tests/README.md` for how to run it and for the current findings list.
 
 ## Logging
 
