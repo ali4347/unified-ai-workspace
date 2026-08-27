@@ -38,12 +38,17 @@
 --   * public.providers/models are reference data: readable by any authenticated
 --                             user, writable only by migrations / service role.
 --
--- RESOLVED FINDING (2026-08-27):
---   public.provider_sessions previously enforced only `user_id = auth.uid()`,
---   letting a user point one of their own session rows at another user's
---   connected account or extension device. Fixed by
---   20260825180000_provider_sessions_ownership_chain.sql; §11 now asserts both
---   chains hard, in both INSERT and UPDATE, with a positive control.
+-- RESOLVED FINDINGS (2026-08-27):
+--   * provider_sessions enforced only `user_id = auth.uid()`, letting a user
+--     point their own session rows at another user's connected account or
+--     extension device. Fixed by 20260825180000; §11 asserts both chains hard,
+--     on INSERT and UPDATE, with a positive control.
+--   * messages enforced the conversation chain on INSERT but not UPDATE, so a
+--     user could move their own message into another user's conversation.
+--     Fixed by 20260825190000; §7 asserts the UPDATE chain hard, with a
+--     positive control (moving between two own conversations still works).
+--   Further open findings of the same family are listed in
+--   supabase/tests/README.md → Findings.
 -- ===========================================================================
 
 
@@ -162,11 +167,12 @@ begin
     ('de77de77-0000-4000-8000-000000000a21', a, 'A project (delete target)'),
     ('de77de77-0000-4000-8000-000000000b01', b, 'B project');
 
-  -- conversations
+  -- conversations (…a29 is the move target for the messages update-chain checks)
   insert into public.conversations (id, user_id, title, project_id)
   values
     ('de77de77-0000-4000-8000-000000000a02', a, 'A conversation', 'de77de77-0000-4000-8000-000000000a01'),
     ('de77de77-0000-4000-8000-000000000a22', a, 'A conversation (delete target)', null),
+    ('de77de77-0000-4000-8000-000000000a29', a, 'A second conversation', null),
     ('de77de77-0000-4000-8000-000000000b02', b, 'B conversation', null);
 
   -- messages
@@ -457,6 +463,40 @@ begin
   exception when insufficient_privilege then blocked := true;
   end;
   perform pg_temp.ok(blocked, 'messages/insert-as-other: A can INSERT a message owned by B');
+
+  -- UPDATE OWNERSHIP CHAIN (20260825190000): conversation_id is mutable, so
+  -- the chain must hold on UPDATE too, not just INSERT.
+
+  -- Positive control first: moving an own message between two OWN
+  -- conversations must work, so a deny-all policy cannot produce a green run.
+  update public.messages
+     set conversation_id = 'de77de77-0000-4000-8000-000000000a29'
+   where id = 'de77de77-0000-4000-8000-000000000a03';
+  get diagnostics n = row_count;
+  perform pg_temp.ok(n = 1,
+    'messages/update-move-own: A cannot move their own message between their OWN conversations — the policy is too strict');
+
+  -- A may not move their own message into B's conversation.
+  blocked := false;
+  begin
+    update public.messages
+       set conversation_id = 'de77de77-0000-4000-8000-000000000b02'
+     where id = 'de77de77-0000-4000-8000-000000000a03';
+  exception when insufficient_privilege then blocked := true;
+  end;
+  perform pg_temp.ok(blocked,
+    'messages/update-move-chain: A can MOVE their own message into B''s conversation — the UPDATE ownership chain is not enforced');
+
+  -- A may not hand their own message to B by rewriting user_id.
+  blocked := false;
+  begin
+    update public.messages
+       set user_id = b
+     where id = 'de77de77-0000-4000-8000-000000000a03';
+  exception when insufficient_privilege then blocked := true;
+  end;
+  perform pg_temp.ok(blocked,
+    'messages/update-reassign-owner: A can CHANGE their own message''s user_id to B');
 end $$;
 
 -- ---------------------------------------------------------------------------

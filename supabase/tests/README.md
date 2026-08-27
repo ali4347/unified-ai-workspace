@@ -14,7 +14,7 @@ The suite prints `RLS checks passed: N/N`. That line only appears if **every** a
 | `connected_accounts` | read own ✔ / read other ✘ / update own ✔ / update other ✘ / delete other ✘ / insert-as-other ✘ |
 | `projects` | full matrix: read, update, delete own ✔; read, update, delete other ✘; insert-as-other ✘ |
 | `conversations` | full matrix (as projects) |
-| `messages` | full matrix **plus** the conversation-ownership chain: A may not insert into B's conversation even with their own `user_id` |
+| `messages` | full matrix **plus** the conversation-ownership chain on INSERT *and* UPDATE: A may not insert into B's conversation, may not move an own message into B's conversation, may not reassign an own message's `user_id` to B — with a positive control that moving between two own conversations still works |
 | `attachments` | read own ✔ / read other ✘ / update own ✘ *(immutable by design)* / update other ✘ / delete own ✔ / delete other ✘ / insert own ✔ / insert into B's conversation ✘ / insert-as-other ✘ |
 | `extension_devices` | full matrix |
 | `provider_sessions` | full matrix **plus** both ownership chains: a session may not reference another user's connected account or extension device, on INSERT or UPDATE, with a positive control that a fully-owned chain still works |
@@ -96,10 +96,21 @@ The M3 policies checked only `user_id = auth.uid()`, so a user could create or u
 
 Fixed in `supabase/migrations/20260825180000_provider_sessions_ownership_chain.sql`, which rebuilds only the INSERT and UPDATE policies around the same `exists (…)` pattern `messages` and `attachments` have used since M3. SELECT and DELETE were left untouched. §11 of the suite now asserts both chains hard, on both INSERT and UPDATE, plus a positive control proving a fully-owned chain is still permitted (so the fix cannot pass by denying everything).
 
-### Open — `messages` UPDATE does not re-check the conversation chain
+### Resolved — `messages` UPDATE conversation chain (2026-08-27)
 
-Noticed while fixing the above, **not** changed here because it is outside the approved scope and `messages` is on a live write path.
+`messages_insert_own` always required that the target conversation belong to the caller, but `messages_update_own` checked only `user_id` — and `conversation_id` is mutable, so a user could move one of their own messages into another user's conversation. Nothing was disclosed (the other user's `SELECT` is filtered by their own `user_id`), but the write side of the conversation boundary was open on UPDATE while closed on INSERT.
 
-`messages_insert_own` correctly requires that the target conversation belongs to the caller, but `messages_update_own` is only `using (auth.uid() = user_id) with check (auth.uid() = user_id)`. A user can therefore update one of their own messages to set `conversation_id` to another user's conversation. As with the resolved finding, nothing is disclosed — the other user's `SELECT` is filtered by their own `user_id`, so they never see the moved row — and the mover only relocates a message they already own. It is an integrity gap in the same family.
+Fixed in `supabase/migrations/20260825190000_messages_update_ownership_chain.sql`: `USING` preserved verbatim, `WITH CHECK` strengthened to mirror the INSERT policy. §7 of the suite asserts the chain hard on UPDATE (move into B's conversation ✘, reassign `user_id` to B ✘) with a positive control (move between two own conversations ✔).
 
-Closing it would mean a new migration adding the same `exists (…)` clause to the UPDATE policy's `WITH CHECK`. Worth a decision before the extension starts writing session/message rows.
+### Open — remaining unverified FK references (integrity-only, reported 2026-08-27)
+
+A systematic audit of every mutable FK from a user-owned row into another user-owned parent found four more references that RLS does not verify. None is a disclosure — every read stays filtered by the reader's own `user_id` — and all are mitigated on the app's own write paths (`resolveSelection` and the project queries only resolve RLS-visible rows), but a direct PostgREST call with a guessed UUID bypasses that. Deliberately **not** fixed here; each needs a product-owner decision:
+
+| Reference | Policies missing the check | Effect if abused |
+| --- | --- | --- |
+| `messages.account_id` → `connected_accounts` | INSERT and UPDATE | own message labeled with another user's account id |
+| `conversations.project_id` → `projects` | INSERT and UPDATE | own conversation filed under another user's project (its owner never sees it) |
+| `conversations.active_account_id` → `connected_accounts` | INSERT and UPDATE | own conversation's active-account pointer set to another user's account |
+| `attachments.message_id` → `messages` | INSERT (immutable thereafter) | own attachment linked to another user's message id (`conversation_id` *is* verified) |
+
+`provider_id` / `model_id` columns reference global reference tables and need no ownership check. If these are fixed, follow the established pattern: one forward-only migration per decision, then convert the corresponding suite coverage into hard assertions.
