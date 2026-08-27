@@ -39,16 +39,18 @@
 --                             user, writable only by migrations / service role.
 --
 -- RESOLVED FINDINGS (2026-08-27):
---   * provider_sessions enforced only `user_id = auth.uid()`, letting a user
---     point their own session rows at another user's connected account or
---     extension device. Fixed by 20260825180000; §11 asserts both chains hard,
---     on INSERT and UPDATE, with a positive control.
---   * messages enforced the conversation chain on INSERT but not UPDATE, so a
---     user could move their own message into another user's conversation.
---     Fixed by 20260825190000; §7 asserts the UPDATE chain hard, with a
---     positive control (moving between two own conversations still works).
---   Further open findings of the same family are listed in
---   supabase/tests/README.md → Findings.
+--   * provider_sessions: connected_account_id/device_id chains unenforced.
+--     Fixed by 20260825180000; §11 asserts both chains, INSERT and UPDATE.
+--   * messages: conversation chain enforced on INSERT but not UPDATE.
+--     Fixed by 20260825190000; §7 asserts the UPDATE chain.
+--   * messages.account_id, conversations.project_id,
+--     conversations.active_account_id, attachments.message_id: parent
+--     ownership unverified (NULL always allowed; attachments additionally
+--     require the referenced message to live in the SAME conversation).
+--     Fixed by 20260825200000; §6b, §7 and §8 assert every chain with
+--     positive controls (own reference and NULL both succeed) so a deny-all
+--     policy cannot go green.
+--   Remaining open findings are listed in supabase/tests/README.md → Findings.
 -- ===========================================================================
 
 
@@ -407,6 +409,92 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
+-- §6b conversations ownership chains (20260825200000): project_id and
+--     active_account_id must be NULL or belong to the caller, on INSERT and
+--     UPDATE. Positive controls first so a deny-all policy cannot go green.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  a uuid := current_setting('test.uid_a')::uuid;
+  n integer;
+  blocked boolean;
+begin
+  -- Positive: own project + own active account.
+  insert into public.conversations (id, user_id, title, project_id, active_account_id)
+  values ('de77de77-0000-4000-8000-0000000000d1', a, 'A chained conversation',
+          'de77de77-0000-4000-8000-000000000a01', 'de77de77-0000-4000-8000-000000000a05');
+  get diagnostics n = row_count;
+  perform pg_temp.ok(n = 1,
+    'conversations/insert-own-chain: A cannot create a conversation in their OWN project with their OWN account — the policy is too strict');
+
+  -- Positive: both references null.
+  insert into public.conversations (id, user_id, title, project_id, active_account_id)
+  values ('de77de77-0000-4000-8000-0000000000d2', a, 'A null-chain conversation', null, null);
+  get diagnostics n = row_count;
+  perform pg_temp.ok(n = 1,
+    'conversations/insert-null-chain: A cannot create a conversation with NULL project/account — the policy is too strict');
+
+  -- Negative: B's project on INSERT.
+  blocked := false;
+  begin
+    insert into public.conversations (user_id, title, project_id)
+    values (a, 'filed under B', 'de77de77-0000-4000-8000-000000000b01');
+  exception when insufficient_privilege then blocked := true;
+  end;
+  perform pg_temp.ok(blocked,
+    'conversations/insert-project-chain: A can CREATE a conversation inside B''s project');
+
+  -- Negative: B's connected account on INSERT.
+  blocked := false;
+  begin
+    insert into public.conversations (user_id, title, active_account_id)
+    values (a, 'pointing at B account', 'de77de77-0000-4000-8000-000000000b05');
+  exception when insufficient_privilege then blocked := true;
+  end;
+  perform pg_temp.ok(blocked,
+    'conversations/insert-account-chain: A can CREATE a conversation referencing B''s connected account');
+
+  -- Negative: repoint an own conversation at B's project on UPDATE.
+  blocked := false;
+  begin
+    update public.conversations
+       set project_id = 'de77de77-0000-4000-8000-000000000b01'
+     where id = 'de77de77-0000-4000-8000-0000000000d2';
+  exception when insufficient_privilege then blocked := true;
+  end;
+  perform pg_temp.ok(blocked,
+    'conversations/update-project-chain: A can MOVE their own conversation into B''s project');
+
+  -- Positive: repoint at an OWN project on UPDATE.
+  update public.conversations
+     set project_id = 'de77de77-0000-4000-8000-000000000a01'
+   where id = 'de77de77-0000-4000-8000-0000000000d2';
+  get diagnostics n = row_count;
+  perform pg_temp.ok(n = 1,
+    'conversations/update-project-own: A cannot move their own conversation into their OWN project — the policy is too strict');
+
+  -- Negative: repoint active_account_id at B's account on UPDATE.
+  blocked := false;
+  begin
+    update public.conversations
+       set active_account_id = 'de77de77-0000-4000-8000-000000000b05'
+     where id = 'de77de77-0000-4000-8000-0000000000d2';
+  exception when insufficient_privilege then blocked := true;
+  end;
+  perform pg_temp.ok(blocked,
+    'conversations/update-account-chain: A can REPOINT their own conversation at B''s connected account');
+
+  -- Positive: repoint at an OWN account on UPDATE.
+  update public.conversations
+     set active_account_id = 'de77de77-0000-4000-8000-000000000a05'
+   where id = 'de77de77-0000-4000-8000-0000000000d2';
+  get diagnostics n = row_count;
+  perform pg_temp.ok(n = 1,
+    'conversations/update-account-own: A cannot point their own conversation at their OWN account — the policy is too strict');
+end $$;
+
+-- ---------------------------------------------------------------------------
 -- §7  messages  (own CRUD + conversation-ownership chain on insert)
 -- ---------------------------------------------------------------------------
 
@@ -497,6 +585,54 @@ begin
   end;
   perform pg_temp.ok(blocked,
     'messages/update-reassign-owner: A can CHANGE their own message''s user_id to B');
+
+  -- ACCOUNT OWNERSHIP CHAIN (20260825200000): account_id must be NULL or an
+  -- own connected account, on INSERT and UPDATE.
+
+  -- Positive: own account on INSERT.
+  insert into public.messages (conversation_id, user_id, role, content, account_id)
+  values ('de77de77-0000-4000-8000-000000000a02', a, 'assistant', 'reply via A account',
+          'de77de77-0000-4000-8000-000000000a05');
+  get diagnostics n = row_count;
+  perform pg_temp.ok(n = 1,
+    'messages/insert-own-account: A cannot insert a message referencing their OWN account — the policy is too strict');
+
+  -- Positive: NULL account on INSERT.
+  insert into public.messages (conversation_id, user_id, role, content, account_id)
+  values ('de77de77-0000-4000-8000-000000000a02', a, 'user', 'no account', null);
+  get diagnostics n = row_count;
+  perform pg_temp.ok(n = 1,
+    'messages/insert-null-account: A cannot insert a message with a NULL account_id — the policy is too strict');
+
+  -- Negative: B's account on INSERT.
+  blocked := false;
+  begin
+    insert into public.messages (conversation_id, user_id, role, content, account_id)
+    values ('de77de77-0000-4000-8000-000000000a02', a, 'assistant', 'labeled with B account',
+            'de77de77-0000-4000-8000-000000000b05');
+  exception when insufficient_privilege then blocked := true;
+  end;
+  perform pg_temp.ok(blocked,
+    'messages/insert-account-chain: A can INSERT a message referencing B''s connected account');
+
+  -- Positive: repoint an own message at an OWN account on UPDATE.
+  update public.messages
+     set account_id = 'de77de77-0000-4000-8000-000000000a05'
+   where id = 'de77de77-0000-4000-8000-000000000a03';
+  get diagnostics n = row_count;
+  perform pg_temp.ok(n = 1,
+    'messages/update-account-own: A cannot point their own message at their OWN account — the policy is too strict');
+
+  -- Negative: repoint at B's account on UPDATE.
+  blocked := false;
+  begin
+    update public.messages
+       set account_id = 'de77de77-0000-4000-8000-000000000b05'
+     where id = 'de77de77-0000-4000-8000-000000000a03';
+  exception when insufficient_privilege then blocked := true;
+  end;
+  perform pg_temp.ok(blocked,
+    'messages/update-account-chain: A can REPOINT their own message at B''s connected account');
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -555,6 +691,50 @@ begin
   exception when insufficient_privilege then blocked := true;
   end;
   perform pg_temp.ok(blocked, 'attachments/insert-as-other: A can INSERT an attachment owned by B');
+
+  -- MESSAGE OWNERSHIP CHAIN (20260825200000): message_id must be NULL or an
+  -- own message in the SAME conversation as the attachment.
+  -- (Message a03 was moved to conversation …a29 by the §7 update-move-own
+  -- check, so …a29 is its home conversation from here on.)
+
+  -- Positive: own message, same own conversation.
+  insert into public.attachments (user_id, conversation_id, message_id, file_name, storage_path)
+  values (a, 'de77de77-0000-4000-8000-000000000a29', 'de77de77-0000-4000-8000-000000000a03',
+          'linked.txt', a::text || '/rls-check/linked.txt');
+  get diagnostics n = row_count;
+  perform pg_temp.ok(n = 1,
+    'attachments/insert-own-message: A cannot attach to their OWN message in the same conversation — the policy is too strict');
+
+  -- Positive: NULL message_id.
+  insert into public.attachments (user_id, conversation_id, message_id, file_name, storage_path)
+  values (a, 'de77de77-0000-4000-8000-000000000a29', null,
+          'unlinked.txt', a::text || '/rls-check/unlinked.txt');
+  get diagnostics n = row_count;
+  perform pg_temp.ok(n = 1,
+    'attachments/insert-null-message: A cannot attach with a NULL message_id — the policy is too strict');
+
+  -- Negative: B's message.
+  blocked := false;
+  begin
+    insert into public.attachments (user_id, conversation_id, message_id, file_name, storage_path)
+    values (a, 'de77de77-0000-4000-8000-000000000a02', 'de77de77-0000-4000-8000-000000000b03',
+            'stolen-link.txt', a::text || '/rls-check/stolen-link.txt');
+  exception when insufficient_privilege then blocked := true;
+  end;
+  perform pg_temp.ok(blocked,
+    'attachments/insert-other-message: A can ATTACH to B''s message');
+
+  -- Negative: own message but from a DIFFERENT conversation (a03 lives in
+  -- …a29; the attachment claims …a02).
+  blocked := false;
+  begin
+    insert into public.attachments (user_id, conversation_id, message_id, file_name, storage_path)
+    values (a, 'de77de77-0000-4000-8000-000000000a02', 'de77de77-0000-4000-8000-000000000a03',
+            'cross-link.txt', a::text || '/rls-check/cross-link.txt');
+  exception when insufficient_privilege then blocked := true;
+  end;
+  perform pg_temp.ok(blocked,
+    'attachments/insert-cross-conversation: A can attach to an own message from a DIFFERENT conversation than the attachment claims');
 end $$;
 
 -- ---------------------------------------------------------------------------

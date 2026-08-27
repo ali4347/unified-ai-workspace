@@ -105,7 +105,7 @@ Acceptance criteria (PRD §55): sign-in/sign-out and route protection are implem
 
 - Code: pushed to GitHub `main` → Vercel builds and deploys https://unified-ai-workspace-web.vercel.app automatically (env vars configured since M1)
 - Hosted database: migrations `20260824120000_profiles` through `20260825170000_refresh_provider_model_ids` are **applied** (pushed via `supabase db push`, 2026-08-27; ledger repaired for M1, which had been applied through the SQL Editor)
-- **Pending:** the two RLS ownership-chain fixes — `20260825180000_provider_sessions_ownership_chain.sql` and `20260825190000_messages_update_ownership_chain.sql` — plus a run of `supabase/tests/rls_checks.sql` (self-rolling-back) to verify isolation after they land.
+- **Pending:** the three RLS ownership-chain fixes — `20260825180000_provider_sessions_ownership_chain.sql`, `20260825190000_messages_update_ownership_chain.sql` and `20260825200000_complete_fk_ownership_chains.sql` — plus a run of `supabase/tests/rls_checks.sql` (self-rolling-back) to verify isolation after they land.
 - Extension ships as a development build only (`pnpm --filter @uaw/extension build` → load `apps/extension/dist` unpacked), per PRD §60 M10
 
 ## Milestone 6 compliance gate (resolved)

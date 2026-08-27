@@ -13,9 +13,9 @@ The suite prints `RLS checks passed: N/N`. That line only appears if **every** a
 | `profiles` | read own ✔ / read other ✘ / update own ✔ / update other ✘ / delete own ✘ *(by design)* / delete other ✘ / insert-as-other ✘ |
 | `connected_accounts` | read own ✔ / read other ✘ / update own ✔ / update other ✘ / delete other ✘ / insert-as-other ✘ |
 | `projects` | full matrix: read, update, delete own ✔; read, update, delete other ✘; insert-as-other ✘ |
-| `conversations` | full matrix (as projects) |
-| `messages` | full matrix **plus** the conversation-ownership chain on INSERT *and* UPDATE: A may not insert into B's conversation, may not move an own message into B's conversation, may not reassign an own message's `user_id` to B — with a positive control that moving between two own conversations still works |
-| `attachments` | read own ✔ / read other ✘ / update own ✘ *(immutable by design)* / update other ✘ / delete own ✔ / delete other ✘ / insert own ✔ / insert into B's conversation ✘ / insert-as-other ✘ |
+| `conversations` | full matrix **plus** both reference chains on INSERT and UPDATE: `project_id` and `active_account_id` must be NULL or owned by the caller — with positive controls (own reference and NULL both succeed) |
+| `messages` | full matrix **plus** every reference chain on INSERT *and* UPDATE: conversation must be owned (insert into / move into B's conversation ✘, reassign `user_id` to B ✘) and `account_id` must be NULL or owned (B's account ✘ on insert and update) — with positive controls (own conversation move, own account, NULL account all succeed) |
+| `attachments` | read own ✔ / read other ✘ / update own ✘ *(immutable by design)* / update other ✘ / delete own ✔ / delete other ✘ / insert own ✔ / insert into B's conversation ✘ / insert-as-other ✘ / `message_id` chain: own message in same conversation ✔, NULL ✔, B's message ✘, own message from a *different* conversation ✘ |
 | `extension_devices` | full matrix |
 | `provider_sessions` | full matrix **plus** both ownership chains: a session may not reference another user's connected account or extension device, on INSERT or UPDATE, with a positive control that a fully-owned chain still works |
 | `providers`, `models` | readable by any authenticated user ✔; insert/update/delete ✘; every model carries an `api_model` mapping |
@@ -102,15 +102,19 @@ Fixed in `supabase/migrations/20260825180000_provider_sessions_ownership_chain.s
 
 Fixed in `supabase/migrations/20260825190000_messages_update_ownership_chain.sql`: `USING` preserved verbatim, `WITH CHECK` strengthened to mirror the INSERT policy. §7 of the suite asserts the chain hard on UPDATE (move into B's conversation ✘, reassign `user_id` to B ✘) with a positive control (move between two own conversations ✔).
 
-### Open — remaining unverified FK references (integrity-only, reported 2026-08-27)
+### Resolved — remaining FK reference chains on messages, conversations, attachments (2026-08-27)
 
-A systematic audit of every mutable FK from a user-owned row into another user-owned parent found four more references that RLS does not verify. None is a disclosure — every read stays filtered by the reader's own `user_id` — and all are mitigated on the app's own write paths (`resolveSelection` and the project queries only resolve RLS-visible rows), but a direct PostgREST call with a guessed UUID bypasses that. Deliberately **not** fixed here; each needs a product-owner decision:
+The four gaps found by the first systematic FK audit are closed by `supabase/migrations/20260825200000_complete_fk_ownership_chains.sql` and covered by hard assertions:
 
-| Reference | Policies missing the check | Effect if abused |
+| Reference | Fixed on | Suite coverage |
 | --- | --- | --- |
-| `messages.account_id` → `connected_accounts` | INSERT and UPDATE | own message labeled with another user's account id |
-| `conversations.project_id` → `projects` | INSERT and UPDATE | own conversation filed under another user's project (its owner never sees it) |
-| `conversations.active_account_id` → `connected_accounts` | INSERT and UPDATE | own conversation's active-account pointer set to another user's account |
-| `attachments.message_id` → `messages` | INSERT (immutable thereafter) | own attachment linked to another user's message id (`conversation_id` *is* verified) |
+| `messages.account_id` → `connected_accounts` | INSERT + UPDATE | §7: own ✔, NULL ✔, B's account ✘ on insert and update |
+| `conversations.project_id` → `projects` | INSERT + UPDATE | §6b: own ✔, NULL ✔, B's project ✘ on insert and update |
+| `conversations.active_account_id` → `connected_accounts` | INSERT + UPDATE | §6b: own ✔, NULL ✔, B's account ✘ on insert and update |
+| `attachments.message_id` → `messages` | INSERT (rows stay immutable) | §8: own message in same conversation ✔, NULL ✔, B's message ✘, own message from a different conversation ✘ |
 
-`provider_id` / `model_id` columns reference global reference tables and need no ownership check. If these are fixed, follow the established pattern: one forward-only migration per decision, then convert the corresponding suite coverage into hard assertions.
+The attachments policy also enforces that the referenced message live in the **same conversation** as the attachment, so an attachment cannot claim conversation X while pointing at an own message from conversation Y. `provider_id`/`model_id` columns reference global tables and need no ownership check. USING clauses, SELECT and DELETE policies were untouched, and attachments remain immutable.
+
+### Open — `provider_events` INSERT references (integrity-only, reported 2026-08-27)
+
+The post-fix re-audit leaves exactly one gap in this family: `provider_events_insert_own` checks only `user_id = auth.uid()`, while the row's `account_id` and `conversation_id` (both nullable, immutable after insert — the table has no UPDATE policy) are unverified. A user could log an event in their own event stream referencing another user's account or conversation UUID. Nothing is disclosed, and the app's `logProviderEvent` never sets `account_id` at all — but the same `NULL-or-owned` pattern would close it. Deliberately not fixed here (outside the four approved findings); needs a product-owner decision.
