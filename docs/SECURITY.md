@@ -24,21 +24,25 @@ Binding rules from PRD §5, §7, §19, §32, §48, §59, §61–62. Violations b
 
 Never log: passwords, auth cookies, tokens, full provider sessions. Log instead: request id, provider, model, duration, status, error code (PRD §48). Analytics must not capture prompt content unless explicitly required (§49).
 
-## User-supplied API keys (`official_api` mode, M6+)
+## User-supplied API keys (Bring Your Own API — the only production mode)
 
-- Keys are stored **only in the user's browser** (localStorage) and sent as a per-request header to our same-origin proxy route, which forwards them to the official provider API. No database column, no server-side persistence, no logging of the key or its presence.
+- Keys are stored **only in the user's browser** (localStorage) and sent as a per-request header to our same-origin proxy route, which forwards them to the official provider API. No database column, no server-side persistence, no logging of the key or its presence, never in a URL or query string, never in analytics or error payloads.
+- **The workspace holds no provider credentials of its own.** There is no server-side `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`, and no `NEXT_PUBLIC_` provider secret. All model spend belongs to the key's owner.
 - Proxy routes require a signed-in portal user (never an open relay), enforce per-user rate limits and payload caps, and map provider errors to normalized codes with generic messages (no key material, no prompt content).
-- Disconnecting an API-key account clears the key from the browser.
+- Disconnecting a connection clears the key from the browser.
+- **No silent fallback.** A missing key, an absent connection, or a retired `manual` record each raise a normalized provider error. The mock adapter is reachable only behind an explicit dev flag, so production can never fabricate a reply that looks real.
 
 ## Compliance policy (provider integrations)
 
 Integration statuses: `supported | experimental | disabled | manual | official_api` (PRD §7). No adapter may steal cookies, request/store AI passwords, bypass rate/usage limits, defeat CAPTCHA, or circumvent provider protections — these are product non-goals (§5) and hard development rules (§61.13).
 
-**Standing engineering position:** the consumer terms of service of OpenAI, Anthropic, Google, Microsoft and Perplexity currently prohibit automated/programmatic access to their consumer web interfaces. PRD §7 explicitly requires falling back to a compliant mode in that case. Therefore this codebase contains no consumer-site automation, and the viable integration modes for real providers are:
+**Standing engineering position:** consumer subscriptions (ChatGPT Free/Plus/Pro, Claude consumer plans) and developer APIs are separate products. The consumer terms of OpenAI, Anthropic, Google, Microsoft and Perplexity prohibit automated/programmatic access to their consumer web interfaces, so this codebase contains **no** consumer-site automation, no session or credential capture, no scraping, and never draws on consumer subscription quota. A user's Unified AI Workspace sign-in authenticates them to this workspace only; it is not a provider login.
 
-1. `official_api` — user-supplied API keys via the official APIs (optional path allowed by PRD §6);
-2. `manual` — user-mediated flows with zero automation of the provider site;
-3. a provider-sanctioned integration mechanism, if one becomes available.
+The single supported integration mode is:
+
+1. **Bring Your Own API** (`official_api`) — the user's own developer API key via the official APIs (the optional path allowed by PRD §6).
+
+`manual` (user copy/paste) is **retired**: not offered, not selectable, not executable. Its historical rows and messages remain readable. A provider-sanctioned mechanism could be added in future under the same compliance checklist.
 
 Each adapter must pass a written ToS review before its status may be set to anything other than `disabled`. Mock adapters are used for all development.
 

@@ -3,7 +3,11 @@
 import Link from "next/link";
 import { Check, ChevronDown, CircleUserRound, Plus } from "lucide-react";
 import type { IntegrationMode, ProviderSelection } from "@uaw/types";
-import { getAccount, getEntry } from "@/lib/providers/catalog";
+import {
+  getAccount,
+  getEntry,
+  selectableAccounts,
+} from "@/lib/providers/catalog";
 import { useCatalog } from "@/components/providers/catalog-context";
 import {
   Popover,
@@ -29,6 +33,8 @@ export function AccountSelector({
 }>) {
   const catalog = useCatalog();
   const entry = getEntry(catalog, selection.providerSlug);
+  // Retired manual records are never offered for a new turn.
+  const accounts = selectableAccounts(catalog, selection.providerSlug);
   const active = getAccount(catalog, selection.providerSlug, selection.accountId);
 
   return (
@@ -40,16 +46,16 @@ export function AccountSelector({
       >
         <CircleUserRound className="size-4 shrink-0" />
         <span className="hidden max-w-40 truncate sm:block">
-          {active?.email ?? "No account"}
+          {active && !active.legacy ? active.email : "Not connected"}
         </span>
         <ChevronDown className="size-4 shrink-0" />
       </PopoverTrigger>
 
       <PopoverContent align="end" className="w-64 max-w-[calc(100vw-1.5rem)]">
         <div className="px-2 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          {entry.meta.name} accounts
+          {entry.meta.name === "Claude" ? "Anthropic API" : "OpenAI API"}
         </div>
-        {entry.accounts.map((accountInfo) => (
+        {accounts.map((accountInfo) => (
           <AccountRow
             key={accountInfo.id}
             email={accountInfo.email}
@@ -59,9 +65,9 @@ export function AccountSelector({
             onSelect={() => onSelectAccount(accountInfo.id)}
           />
         ))}
-        {entry.accounts.length === 0 && (
+        {accounts.length === 0 && (
           <p className="px-2 py-1.5 text-sm text-muted-foreground">
-            No accounts connected yet
+            No API key connected yet
           </p>
         )}
         <Link
@@ -69,7 +75,7 @@ export function AccountSelector({
           className="mt-1 flex items-center gap-2 rounded-md border-t px-2 pb-1.5 pt-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <Plus className="size-4" />
-          Connect account
+          Connect an API key
         </Link>
       </PopoverContent>
     </Popover>
@@ -112,9 +118,9 @@ function AccountRow({
       <span className="sr-only">
         {status === "connected" ? "connected" : `status: ${status}`}
       </span>
-      {mode && (
+      {mode === "official_api" && (
         <span className="shrink-0 rounded-full border px-1.5 py-px text-[10px] text-muted-foreground">
-          {mode === "manual" ? "manual" : "API"}
+          API key
         </span>
       )}
       {active && <Check className="size-4 shrink-0" />}

@@ -5,21 +5,24 @@ import type { IntegrationMode, ProviderSlug } from "@uaw/types";
 import { createClient } from "@/lib/supabase/server";
 
 /**
- * Connected-account CRUD (M6). Rows are METADATA ONLY (PRD §19): provider,
- * label/email, integration mode, status. API keys never reach the server —
- * they stay in the user's browser (see lib/providers/key-store.ts).
+ * Connected-account CRUD. Rows are METADATA ONLY (PRD §19): provider, label,
+ * mode and status. API keys never reach the server — they stay in the user's
+ * browser (see lib/providers/key-store.ts).
+ *
+ * Only Bring Your Own API connections can be created. The retired `manual`
+ * mode is not accepted; existing manual rows stay in the database so
+ * historical messages keep resolving, and are excluded from selection.
  */
 
 const MAX_LABEL = 120;
 
 export async function connectAccount(input: {
   providerSlug: ProviderSlug;
-  mode: IntegrationMode;
   email?: string;
 }): Promise<{ id?: string; error?: string }> {
-  if (input.mode !== "manual" && input.mode !== "official_api") {
-    return { error: "Unsupported integration mode" };
-  }
+  // The stored value stays `official_api` so existing rows keep working; the
+  // product surface calls it Bring Your Own API.
+  const mode: IntegrationMode = "official_api";
 
   const supabase = await createClient();
   const {
@@ -48,7 +51,7 @@ export async function connectAccount(input: {
       provider_id: provider.id,
       email,
       status: "connected",
-      metadata: { mode: input.mode },
+      metadata: { mode },
       last_connected_at: new Date().toISOString(),
     })
     .select("id")

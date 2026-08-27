@@ -55,11 +55,11 @@ src/components/
   sidebar/search-dialog.tsx   → global search (titles, message contents, project names)
   auth/                       → login form, setup notice
   chat/                       → chat-view (state owner + persistence), composer, message-list,
-                                manual-handoff (manual mode panel), message-content (code rendering)
+                                message-content (code rendering)
   providers/                  → ai-selector, account-selector, provider-badge, catalog-context
   projects/project-manager.tsx→ project list + forms
   settings/theme-toggle.tsx   → light/dark/system switcher
-  settings/provider-accounts.tsx → connect/disconnect provider accounts (manual | API key)
+  settings/provider-accounts.tsx → connect/remove Bring-Your-Own-API keys
   settings/extension-status.tsx  → companion extension connection status
 src/hooks/use-theme.ts        → theme preference ↔ localStorage("uaw-theme") + .dark class
 src/lib/
@@ -69,11 +69,11 @@ src/lib/
   chat/actions.ts             → server actions: conversation/message CRUD, selection, events, search
   chat/types.ts               → UiChatMessage (chat UI state shape)
   projects/actions.ts         → server actions: project CRUD
-  chat/context.ts             → context handoff engine: strategies A–D, rolling summary, manual package
+  chat/context.ts             → context handoff engine: strategies A–D, rolling summary
   accounts/actions.ts         → server actions: connect/disconnect provider accounts (metadata only)
   extension/client.ts         → postMessage client for the companion extension
   providers/catalog.ts        → catalog built from DB rows (+ static fallback pre-migration)
-  providers/registry.ts       → registry with per-account routing: manual / official_api (mock only without an account)
+  providers/registry.ts       → routing: Bring Your Own API only; everything else refused
   providers/model-map.ts      → catalog id → provider API model id (verified; DB is runtime source)
   providers/key-store.ts      → browser-only localStorage for user API keys (never server-side)
   providers/server/proxy.ts   → shared proxy plumbing (auth, rate limit, validation, model map)
@@ -115,7 +115,7 @@ Login page
 | `force-dynamic` on auth-dependent segments | Nothing auth/env-related may be baked into the static build |
 | Missing env → setup notice, not crash | Developer/deployment ergonomics; PRD §62 |
 | `@uaw/types` consumed as TS source | No build step; `transpilePackages` in next.config |
-| No provider automation code anywhere yet | Still true: real providers are reached only via `manual` (user-mediated) or `official_api` (user's own key), never by automating a consumer site. The M6 compliance gate was resolved 2026-08-25 |
+| No provider automation code anywhere yet | Still true: providers are reached only through their official developer APIs with the user's own key, never by automating a consumer site |
 | Provider/model/account data from `lib/providers/catalog.ts` | PRD §15 — never hard-coded in UI components; sourced from the database and resolved behind the registry |
 | Chat state local to `ChatView` (React state, no Zustand yet) | PRD §46 — avoid unnecessary global state; persistence happens through server actions |
 | Hand-rolled `Popover` primitive | PRD rule 3 — no Radix until a component genuinely needs it |
@@ -126,8 +126,10 @@ Login page
 | Search = ILIKE over titles/contents/project names | PRD §38 initial scope; backed by `pg_trgm` GIN indexes since M9 (`20260825160000_search_indexes.sql`) |
 | Hand-written `Database` type (type aliases, not interfaces) | supabase-js needs implicit index signatures; `supabase gen types` can replace it later |
 | Adapter streaming = `onChunk` callback + AbortSignal | Matches PRD §25 promise shape while supporting §34 incremental output and §22 stop |
-| Registry built client-side from the catalog | Chat runs in the browser; per-account routing picks mock / official_api / manual behind the same interface |
-| `manual` mode short-circuits in the UI, not the adapter | `sendMessage` cannot model a user-mediated round trip; the handoff panel owns it (PRD §7 manual) |
+| Registry built client-side from the catalog | Chat runs in the browser; the registry routes BYOK requests and refuses every other case behind the same interface |
+| Bring Your Own API is the only execution mode | The workspace funds no model usage; every request spends the key owner's quota |
+| No connection → refuse, never simulate | A fabricated reply that reads as real is worse than a clear error; mock is behind an explicit dev flag |
+| Retired `manual` rows filtered, not deleted | Historical messages must keep resolving their provider/model; no destructive migration |
 | Assistant replies render fenced code only (no full Markdown) | Focused, dependency-free; code is what breaks layout when unrendered. Known gap: headings/lists/emphasis show as plain text |
 | No connected account blocks sending rather than answering with mock text | Simulated replies are for genuine mock mode, not a silent production default |
 | User API keys in browser localStorage only, proxied per request | PRD §19 — nothing credential-like server-side; provider-specific server logic lives only in the proxy route (adapter server-half) |
@@ -142,7 +144,7 @@ Verified release state (2026-08-27):
 
 - All 10 migrations applied to hosted Supabase (through `20260825210000`); 0 pending.
 - `rls_checks.sql` → `RLS_CHECKS_PASSED | 110 | 110`; `rls_cleanup_check.sql` → `CLEANUP_VERIFIED`; `storage_rls_check.ts` → 9/9 via the Storage API.
-- Verified in the production browser: Google sign-in, conversation create/persist/reload, recents, Claude + ChatGPT manual account connection and handoff, Claude → ChatGPT switching in one Master Conversation, provider/model labels on saved replies, context continuity.
+- Verified in the production browser (2026-08-27, under the previous provider UX): Google sign-in, conversation create/persist/reload, recents, Claude → ChatGPT switching in one Master Conversation, provider/model labels on saved replies, context continuity. The Bring-Your-Own-API chat path has not yet been re-verified in the browser since the provider UX was narrowed.
 
 ## Environment
 

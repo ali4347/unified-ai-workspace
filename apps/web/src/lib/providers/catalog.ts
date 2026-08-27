@@ -69,13 +69,17 @@ export function buildCatalog(data: CatalogData): Catalog {
               ? a.metadata
               : {};
           const mode = (metadata as { mode?: unknown }).mode;
+          const integrationMode =
+            mode === "manual" || mode === "official_api" ? mode : undefined;
           return {
             id: a.id,
             providerSlug: provider.slug,
             email: a.email ?? a.display_name ?? "Unnamed account",
             status: a.status,
-            integrationMode:
-              mode === "manual" || mode === "official_api" ? mode : undefined,
+            integrationMode,
+            // Retired manual records stay in the catalog so historical
+            // messages resolve, but are never offered for a new turn.
+            legacy: integrationMode === "manual",
           };
         }),
     }));
@@ -121,6 +125,15 @@ export function getModel(
   return getEntry(catalog, slug).models.find((m) => m.id === modelId);
 }
 
+/** Connections a user may actually select: Bring Your Own API only. Retired
+ * `manual` records are excluded here rather than deleted from the database. */
+export function selectableAccounts(
+  catalog: Catalog,
+  slug: ProviderSlug
+): ProviderAccountInfo[] {
+  return getEntry(catalog, slug).accounts.filter((a) => !a.legacy);
+}
+
 export function getAccount(
   catalog: Catalog,
   slug: ProviderSlug,
@@ -130,14 +143,16 @@ export function getAccount(
   return getEntry(catalog, slug).accounts.find((a) => a.id === accountId);
 }
 
-/** First enabled provider with at least one model. */
+/** First enabled provider with at least one model, pointed at that provider's
+ * first Bring-Your-Own-API connection. `accountId` stays null when nothing is
+ * connected — the chat UI then blocks sending and links to Settings. */
 export function defaultSelection(catalog: Catalog): ProviderSelection {
   const first = catalog.find((e) => e.enabled && e.models.length > 0);
   if (!first) throw new Error("Catalog has no enabled provider with models");
   return {
     providerSlug: first.meta.slug,
     modelId: first.models[0].id,
-    accountId: first.accounts[0]?.id ?? null,
+    accountId: selectableAccounts(catalog, first.meta.slug)[0]?.id ?? null,
   };
 }
 
@@ -151,11 +166,10 @@ export function selectionForModel(
   if (next.providerSlug === current.providerSlug) {
     return { ...current, modelId: next.id };
   }
-  const entry = getEntry(catalog, next.providerSlug);
   return {
     providerSlug: next.providerSlug,
     modelId: next.id,
-    accountId: entry.accounts[0]?.id ?? null,
+    accountId: selectableAccounts(catalog, next.providerSlug)[0]?.id ?? null,
   };
 }
 

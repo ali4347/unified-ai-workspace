@@ -21,9 +21,19 @@ export const metadata = {
   title: "Settings",
 };
 
-// Providers with a live official_api proxy route (kept in sync with
-// lib/providers/registry.ts PROXY_ENDPOINTS).
-const PROXIED_PROVIDERS = new Set(["claude", "chatgpt"]);
+// Providers with a live proxy route (kept in sync with the PROXY_ENDPOINTS
+// map in lib/providers/registry.ts). These are DEVELOPER APIs — never a
+// consumer ChatGPT/Claude subscription.
+const PROVIDER_API = {
+  chatgpt: {
+    apiName: "OpenAI API",
+    blurb: "Connect your OpenAI API key to use OpenAI models.",
+  },
+  claude: {
+    apiName: "Anthropic API",
+    blurb: "Connect your Anthropic API key to use Claude models.",
+  },
+} as const;
 
 export default async function SettingsPage() {
   const supabase = await createClient();
@@ -38,12 +48,16 @@ export default async function SettingsPage() {
   const connectableProviders: ConnectableProvider[] = catalogData.providers
     .filter((p) => p.status === "active")
     .sort((a, b) => a.sort_order - b.sort_order)
-    .map((p) => ({
-      slug: p.slug,
-      name: p.name,
-      connectable: p.integration_type !== "disabled",
-      hasProxy: PROXIED_PROVIDERS.has(p.slug),
-    }));
+    .map((p) => {
+      const api = PROVIDER_API[p.slug as keyof typeof PROVIDER_API];
+      return {
+        slug: p.slug,
+        name: p.name,
+        apiName: api?.apiName ?? `${p.name} API`,
+        blurb: api?.blurb ?? `Connect your ${p.name} API key.`,
+        hasProxy: api !== undefined,
+      };
+    });
   const accountItems: ProviderAccountItem[] = catalogData.accounts.flatMap(
     (a) => {
       const provider = providerById.get(a.provider_id);
@@ -92,11 +106,11 @@ export default async function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>AI providers</CardTitle>
+          <CardTitle>AI Providers</CardTitle>
           <CardDescription>
-            Connect provider accounts. Manual mode needs no credentials; API
-            key mode keeps your key in this browser only — never on our
-            servers.
+            Bring your own developer API key to chat. Your API key is stored
+            only in this browser and is used only for your requests. Your
+            Unified AI Workspace sign-in is separate from any provider account.
           </CardDescription>
         </CardHeader>
         <CardContent>

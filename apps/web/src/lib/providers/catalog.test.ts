@@ -4,6 +4,7 @@ import {
   defaultSelection,
   FALLBACK_CATALOG,
   getEntry,
+  selectableAccounts,
   selectionForModel,
   selectionFromIds,
   type CatalogData,
@@ -66,6 +67,7 @@ const models: ModelRow[] = [
 
 const accounts: ConnectedAccountRow[] = [
   {
+    // Retired manual record: readable, never selectable.
     id: "a-1",
     user_id: "u-1",
     provider_id: "p-claude",
@@ -74,6 +76,21 @@ const accounts: ConnectedAccountRow[] = [
     subscription_label: null,
     status: "connected",
     metadata: { mode: "manual" },
+    last_connected_at: null,
+    last_used_at: null,
+    created_at: "",
+    updated_at: "",
+  },
+  {
+    // Live Bring-Your-Own-API connection.
+    id: "a-2",
+    user_id: "u-1",
+    provider_id: "p-claude",
+    email: "my-anthropic-api",
+    display_name: null,
+    subscription_label: null,
+    status: "connected",
+    metadata: { mode: "official_api" },
     last_connected_at: null,
     last_used_at: null,
     created_at: "",
@@ -99,6 +116,7 @@ describe("buildCatalog", () => {
       id: "a-1",
       email: "ali@example.com",
       integrationMode: "manual",
+      legacy: true,
     });
     expect(getEntry(catalog, "gemini").enabled).toBe(false);
   });
@@ -107,22 +125,33 @@ describe("buildCatalog", () => {
 describe("defaultSelection / selectionForModel", () => {
   const catalog = buildCatalog(data);
 
-  it("picks the first enabled provider with its first model and account", () => {
+  it("defaults to the first Bring-Your-Own-API connection, skipping legacy", () => {
     expect(defaultSelection(catalog)).toEqual({
       providerSlug: "claude",
       modelId: "claude-sonnet",
-      accountId: "a-1",
+      accountId: "a-2",
     });
   });
 
-  it("keeps the account when switching models within a provider", () => {
+  it("never offers a retired manual connection for a new turn", () => {
+    expect(selectableAccounts(catalog, "claude").map((a) => a.id)).toEqual([
+      "a-2",
+    ]);
+  });
+
+  it("leaves accountId null when nothing is connected, so chat blocks", () => {
+    const empty = buildCatalog({ ...data, accounts: [] });
+    expect(defaultSelection(empty).accountId).toBeNull();
+  });
+
+  it("keeps the connection when switching models within a provider", () => {
     const current = defaultSelection(catalog);
     const next = selectionForModel(catalog, current, {
       id: "claude-sonnet",
       providerSlug: "claude",
       name: "Sonnet",
     });
-    expect(next.accountId).toBe("a-1");
+    expect(next.accountId).toBe("a-2");
   });
 
   it("resets the account when switching providers", () => {

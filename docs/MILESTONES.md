@@ -101,6 +101,16 @@ Acceptance criteria (PRD §55): sign-in/sign-out and route protection are implem
 - Tests: vitest (`pnpm test`) — context handoff strategies/summaries, catalog building/selection, proxy validation/rate limiting; proxy validation extracted to a pure module for testability. The suite has since grown (model-id drift guard at M-compat, message parsing at release polish) — see the release record below for the current count
 - Security review: PRD §59 checklist walked and recorded in SECURITY.md (all items pass; extension runs zero permissions)
 
+## Product change — Bring Your Own API only (2026-08-27)
+
+After the milestone sequence, the provider UX was narrowed to a single production execution mode.
+
+- **Bring Your Own API** is the only way to run a model: the user connects their own OpenAI or Anthropic developer API key in Settings → AI Providers, it is validated, and replies stream automatically. Usage bills the user's own provider account.
+- The key stays **browser-held** — never persisted to Supabase, never logged, never in a URL. The workspace holds **no provider credentials of its own** (an owner-funded "Workspace Models" design was built and then reverted before reaching production; see commit 3542683).
+- **Manual copy/paste is retired**: no connection option, no handoff panel, no paste-reply flow. Historical manual messages still render, and legacy `connected_accounts` rows with `metadata.mode='manual'` are excluded from selection rather than deleted — no destructive migration, and none was required for this change.
+- **No mock fallback in production.** No connection, a missing key, or a retired manual record each raise a normalized provider error; the mock adapter is reachable only behind an explicit dev flag.
+- Consumer ChatGPT/Claude subscriptions are never used.
+
 ## Milestone 10 — deployment state
 
 - Code: pushed to GitHub `main` → Vercel builds and deploys https://unified-ai-workspace-web.vercel.app automatically (env vars configured since M1)

@@ -55,11 +55,19 @@ export interface ModelInfo {
   description?: string;
 }
 
-/** Per-account compliant integration mode (M6 gate; PRD §7):
- * - `manual`: the user performs the provider interaction; the app builds the
- *   context package and persists the workflow. Zero credentials.
- * - `official_api`: official provider API with a user-supplied key that is
- *   held in the user's browser only — never stored server-side. */
+/**
+ * Per-account integration mode persisted in `connected_accounts.metadata`.
+ *
+ * - `official_api` — Bring Your Own API: the user's own OpenAI/Anthropic
+ *   developer key, held in their browser only and never stored server-side.
+ *   This is the ONLY mode production can execute.
+ * - `manual` — RETIRED. The copy/paste workflow no longer exists. Rows and
+ *   messages created under it stay readable, but the mode is never offered,
+ *   never selectable, and never executed.
+ *
+ * Consumer ChatGPT/Claude subscriptions are a separate product and are never
+ * used: no session automation, no scraping (docs/SECURITY.md).
+ */
 export type IntegrationMode = "manual" | "official_api";
 
 /** A connected provider account as shown in selectors (PRD §16).
@@ -70,6 +78,9 @@ export interface ProviderAccountInfo {
   email: string;
   status: ProviderConnectionState;
   integrationMode?: IntegrationMode;
+  /** True for retired `manual` records. Kept so historical messages still
+   * render; excluded from selection and refused by the registry. */
+  legacy?: boolean;
 }
 
 /** The active provider/model/account of a conversation (PRD §15–16, §31).

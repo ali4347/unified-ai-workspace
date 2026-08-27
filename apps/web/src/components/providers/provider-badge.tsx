@@ -6,9 +6,10 @@ import { useCatalog } from "@/components/providers/catalog-context";
 
 /**
  * Source badge on assistant messages (PRD §24), e.g. "Claude · Sonnet".
- * The pill labels how the reply was produced: "mock" for simulated replies,
- * "manual" for user-mediated ones; official-API replies carry no pill.
- * Renders even if the provider/model has since vanished from the catalog.
+ * Bring-Your-Own-API replies — the only kind produced now — carry no pill.
+ * "manual" and "mock" appear only on historical messages and still render, so
+ * old conversations stay readable. Renders even if the provider/model has
+ * since vanished from the catalog.
  */
 export function ProviderBadge({
   selection,

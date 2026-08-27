@@ -15,11 +15,7 @@ import {
 } from "@/lib/providers/catalog";
 import { createRegistryFromCatalog } from "@/lib/providers/registry";
 import type { UiChatMessage } from "@/lib/chat/types";
-import {
-  buildManualPackage,
-  buildProviderContext,
-  rollingSummary,
-} from "@/lib/chat/context";
+import { buildProviderContext, rollingSummary } from "@/lib/chat/context";
 import {
   createConversation,
   deleteMessage,
@@ -33,22 +29,18 @@ import { AiSelector } from "@/components/providers/ai-selector";
 import { AccountSelector } from "@/components/providers/account-selector";
 import { Composer } from "@/components/chat/composer";
 import { buttonVariants } from "@/components/ui/button";
-import { ManualHandoff } from "@/components/chat/manual-handoff";
 import { MessageList } from "@/components/chat/message-list";
 import { cn } from "@/lib/utils";
 
-interface ManualState {
-  assistantId: string;
-  providerName: string;
-  packageText: string;
-  selection: ProviderSelection;
-}
-
 /**
- * The Master Conversation view: chat header with provider/model/account
- * selectors, message list and composer. Replies flow through the provider
- * registry — mock without a connected account, `official_api` via the proxy
- * routes, `manual` via the user-mediated handoff panel (M6 gate decision).
+ * The Master Conversation view: chat header with provider/model/connection
+ * selectors, message list and composer.
+ *
+ * Production has one execution mode: Bring Your Own API. Replies stream
+ * automatically through the provider registry and the same-origin proxy.
+ * Without a usable connection the composer is replaced by an actionable
+ * card — sending is blocked, never simulated. Historical manual-mode
+ * messages still render; manual is not offered for new turns.
  */
 export function ChatView({
   catalog,
@@ -78,9 +70,6 @@ export function ChatView({
     initialMessages ?? []
   );
   const [streamingId, setStreamingId] = React.useState<string | null>(null);
-  const [manualState, setManualState] = React.useState<ManualState | null>(
-    null
-  );
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const conversationIdRef = React.useRef<string | null>(
     initialConversationId ?? null
@@ -135,7 +124,6 @@ export function ChatView({
       conversationIdRef.current = null;
       setMessages([]);
       setStreamingId(null);
-      setManualState(null);
       setSaveError(null);
       setSelection(initialSelection);
       window.history.replaceState(null, "", "/chat");
@@ -237,12 +225,18 @@ export function ChatView({
 
   const send = async (text: string) => {
     setSaveError(null);
+    const account = getAccount(
+      catalog,
+      selection.providerSlug,
+      selection.accountId
+    );
     if (
       !getModel(catalog, selection.providerSlug, selection.modelId) ||
-      !getAccount(catalog, selection.providerSlug, selection.accountId)
+      !account ||
+      account.legacy
     ) {
       setSaveError(
-        "Select a connected account and an available model before sending."
+        "Connect your OpenAI API or Anthropic API in Settings to start chatting."
       );
       return;
     }
@@ -278,7 +272,6 @@ export function ChatView({
    * re-run it without duplicating the user's message. */
   const runAssistantTurn = async (text: string, history: UiChatMessage[]) => {
     const requestSelection = selection;
-    const entry = getEntry(catalog, requestSelection.providerSlug);
     const model = getModel(
       catalog,
       requestSelection.providerSlug,
@@ -289,9 +282,9 @@ export function ChatView({
       requestSelection.providerSlug,
       requestSelection.accountId
     );
-    if (!model || !account) {
+    if (!model || !account || account.legacy) {
       setSaveError(
-        "Select a connected account and an available model before sending."
+        "Connect your OpenAI API or Anthropic API in Settings to start chatting."
       );
       return;
     }
@@ -304,37 +297,8 @@ export function ChatView({
     });
     logHandoffIfSwitched(requestSelection, context, history);
 
-    // ---- Manual mode: the USER performs the provider interaction (PRD §7).
-    if (account.integrationMode === "manual") {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: assistantId,
-          role: "assistant",
-          content: "",
-          status: "queued",
-          selection: requestSelection,
-          integration: "manual",
-          createdAt: Date.now(),
-        },
-      ]);
-      setManualState({
-        assistantId,
-        providerName: entry.meta.name,
-        selection: requestSelection,
-        packageText: buildManualPackage({
-          providerName: entry.meta.name,
-          history,
-          prompt: text,
-          projectInstructions,
-        }),
-      });
-      return;
-    }
-
-    // ---- Adapter path: official_api via our proxy route.
-    const integration =
-      account.integrationMode === "official_api" ? "official_api" : "mock";
+    // Single production path: Bring Your Own API, streamed automatically.
+    const integration: UiChatMessage["integration"] = "official_api";
     setMessages((prev) => [
       ...prev,
       {
@@ -418,35 +382,6 @@ export function ChatView({
     }
   };
 
-  const completeManual = (reply: string) => {
-    if (!manualState) return;
-    patchMessage(manualState.assistantId, {
-      content: reply,
-      status: "completed",
-    });
-    persistAssistant({
-      id: manualState.assistantId,
-      content: reply,
-      status: "completed",
-      selection: manualState.selection,
-      integration: "manual",
-    });
-    maintainSummary(
-      messages.map((m) =>
-        m.id === manualState.assistantId
-          ? { ...m, content: reply, status: "completed" as const }
-          : m
-      )
-    );
-    setManualState(null);
-  };
-
-  const cancelManual = () => {
-    if (!manualState) return;
-    setMessages((prev) => prev.filter((m) => m.id !== manualState.assistantId));
-    setManualState(null);
-  };
-
   const stop = () => {
     abortRef.current?.abort();
   };
@@ -496,7 +431,7 @@ export function ChatView({
   };
 
   const streaming = streamingId !== null;
-  const busy = streaming || manualState !== null;
+  const busy = streaming;
   const empty = messages.length === 0;
   const activeAccount = getAccount(
     catalog,
@@ -505,18 +440,12 @@ export function ChatView({
   );
 
   const providerName = getEntry(catalog, selection.providerSlug).meta.name;
-  const composerArea = manualState ? (
-    <ManualHandoff
-      providerName={manualState.providerName}
-      packageText={manualState.packageText}
-      onSave={completeManual}
-      onCancel={cancelManual}
-    />
-  ) : activeAccount ? (
-    <Composer onSend={send} onStop={stop} streaming={streaming} />
-  ) : (
-    <NoAccountNotice providerName={providerName} />
-  );
+  const composerArea =
+    activeAccount && !activeAccount.legacy ? (
+      <Composer onSend={send} onStop={stop} streaming={streaming} />
+    ) : (
+      <NotConnectedNotice providerName={providerName} />
+    );
 
   return (
     <CatalogProvider catalog={catalog}>
@@ -608,15 +537,19 @@ function EmptyState() {
   );
 }
 
-/** Shown instead of the composer when the active provider has no connected
- * account. Sending is blocked rather than answered with simulated text. */
-function NoAccountNotice({ providerName }: Readonly<{ providerName: string }>) {
+/** Shown instead of the composer when the selected provider has no usable
+ * Bring-Your-Own-API connection. Sending is blocked — never simulated. */
+function NotConnectedNotice({
+  providerName,
+}: Readonly<{ providerName: string }>) {
+  const apiName = providerName === "Claude" ? "Anthropic API" : "OpenAI API";
   return (
     <div className="rounded-2xl border border-dashed bg-card p-4 text-center">
-      <p className="text-sm font-medium">Connect a {providerName} account</p>
+      <p className="text-sm font-medium">Connect your {apiName}</p>
       <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-        Choose manual mode to paste prompts and replies yourself, or add your own
-        API key for automatic replies. Your key stays in this browser.
+        Connect your OpenAI API or Anthropic API in Settings to start chatting.
+        Your key is stored only in this browser and is used only for your
+        requests.
       </p>
       <Link
         href="/settings"

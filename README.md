@@ -103,14 +103,21 @@ pnpm test       # vitest unit tests
 pnpm --filter @uaw/extension build   # extension dev build → apps/extension/dist
 ```
 
-## Using real providers
+## Connecting a provider — Bring Your Own API
 
-Without a connected account, chat replies are clearly-labeled **mocks**. In **Settings → AI providers** you can connect Claude or ChatGPT in two compliant modes:
+Production has one execution mode: **you bring your own developer API key.**
 
-- **Manual** — zero credentials: the app builds a context package, you paste it into the provider's own site and paste the reply back. The reply is stored in the Master Conversation with a "manual" badge.
-- **Your API key** — automatic streamed replies via the official Anthropic/OpenAI APIs. The key is validated and then stored **only in your browser** (localStorage); each request forwards it through a same-origin proxy that never stores or logs it.
+1. Sign in to Unified AI Workspace.
+2. Open **Settings → AI Providers**.
+3. Connect your **OpenAI API** or **Anthropic API** key. It is validated before it is saved.
+4. Select that connection in the chat header.
+5. Send a message — replies stream back automatically.
 
-Switching provider mid-conversation hands off context automatically (full history while it fits, otherwise rolling summary + recent messages).
+Usage and billing belong to **your own provider account**. Your API key is stored **only in this browser** and is used only for your requests: it is never written to our database, never logged, and only ever sent to a same-origin proxy that forwards it to the provider.
+
+Without a connection for the selected provider, sending is blocked with a link to Settings — the app never fabricates a reply. Switching provider mid-conversation hands off context automatically (full history while it fits, otherwise rolling summary + recent messages).
+
+> **Consumer subscriptions are not used.** A ChatGPT or Claude *subscription* is a different product from the OpenAI/Anthropic *developer APIs*. This app never automates a consumer session, never scrapes provider sites, and never uses consumer subscription quota. There are no owner-funded provider credentials — the workspace holds no API keys of its own. Manual copy/paste mode is retired; messages created under it remain readable.
 
 ## Deployment
 
