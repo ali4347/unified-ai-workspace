@@ -103,20 +103,18 @@ pnpm test       # vitest unit tests
 pnpm --filter @uaw/extension build   # extension dev build → apps/extension/dist
 ```
 
-## How AI usage works
+## Using real providers
 
-Sign in with Google or an email magic link and start chatting — every reply is automatic and streamed. Two ways to reach a model, chosen per conversation in the chat header:
+Without a connected account, chat replies are clearly-labeled **mocks**. In **Settings → AI providers** you can connect Claude or ChatGPT in two compliant modes:
 
-- **Workspace Models** (default) — models provided by Unified AI Workspace. **No API key required, nothing to set up.** The provider credential is a server-only environment variable that never reaches the browser, and usage is metered per user per day because the workspace pays for it.
-- **Bring Your Own API** — connect your own **OpenAI API** or **Anthropic API** developer key in Settings → AI usage for additional models, billed to your own provider account. The key is stored **only in your browser** and forwarded per request through a same-origin proxy that never stores or logs it.
+- **Manual** — zero credentials: the app builds a context package, you paste it into the provider's own site and paste the reply back. The reply is stored in the Master Conversation with a "manual" badge.
+- **Your API key** — automatic streamed replies via the official Anthropic/OpenAI APIs. The key is validated and then stored **only in your browser** (localStorage); each request forwards it through a same-origin proxy that never stores or logs it.
 
-Switching model or connection mid-conversation hands off context automatically (full history while it fits, otherwise rolling summary + recent messages), so one Master Conversation can move between Workspace and your own API, and between providers.
-
-> **Consumer subscriptions are not used.** Your ChatGPT or Claude *subscription* is a separate product from the OpenAI/Anthropic *developer APIs*. This app never automates a consumer session, never scrapes provider websites, and never uses consumer subscription quota. Your Unified AI Workspace sign-in is only for this workspace.
+Switching provider mid-conversation hands off context automatically (full history while it fits, otherwise rolling summary + recent messages).
 
 ## Deployment
 
-- **Web** — Vercel, auto-deploys from `main`. Env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_APP_URL`, plus the **server-only** `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` that back Workspace Models (never `NEXT_PUBLIC_`) and the optional `WORKSPACE_DAILY_REQUEST_LIMIT`. Without them the app still runs: users are told workspace models are unavailable and can connect their own API key.
+- **Web** — Vercel, auto-deploys from `main`. Env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_APP_URL`.
 - **Database** — hosted Supabase; apply `supabase/migrations/` (SQL Editor or `supabase db push`) and re-run all three harnesses in `supabase/tests/` after schema changes.
 - **Extension** — development build only: `pnpm --filter @uaw/extension build`, then load `apps/extension/dist` unpacked via chrome://extensions.
 

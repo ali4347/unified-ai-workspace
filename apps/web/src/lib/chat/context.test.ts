@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { UiChatMessage } from "@/lib/chat/types";
 import {
+  buildManualPackage,
   buildProviderContext,
   digestMessages,
   estimateTokens,
@@ -106,3 +107,16 @@ describe("digestMessages", () => {
   });
 });
 
+describe("buildManualPackage", () => {
+  it("contains instructions, transcript and the new prompt", () => {
+    const text = buildManualPackage({
+      providerName: "Claude",
+      history: smallHistory,
+      prompt: "And now?",
+      projectInstructions: "Use pnpm.",
+    });
+    expect(text).toContain("Use pnpm.");
+    expect(text).toContain("User: Create the database architecture.");
+    expect(text.trim().endsWith("User: And now?")).toBe(true);
+  });
+});

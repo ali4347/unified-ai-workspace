@@ -94,15 +94,6 @@ export type MessageRow = {
   updated_at: string;
 }
 
-export type WorkspaceUsageRow = {
-  id: string;
-  user_id: string;
-  usage_date: string;
-  request_count: number;
-  created_at: string;
-  updated_at: string;
-};
-
 export type ProviderEventRow = {
   id: string;
   user_id: string;
@@ -183,7 +174,6 @@ export type Database = {
         >,
         Partial<Omit<MessageRow, "id" | "conversation_id" | "user_id" | "created_at" | "updated_at">>
       >;
-      workspace_usage: ReadonlyTable<WorkspaceUsageRow>;
       provider_events: Table<
         ProviderEventRow,
         { user_id: string; event_type: string } & Partial<
@@ -193,18 +183,7 @@ export type Database = {
       >;
     };
     Views: Record<string, never>;
-    Functions: {
-      /** Workspace Models daily quota (security definer; see
-       * supabase/migrations/20260827100000_workspace_usage_quota.sql). */
-      consume_workspace_quota: {
-        Args: { p_daily_limit: number };
-        Returns: {
-          allowed: boolean;
-          used: number;
-          daily_limit: number;
-        }[];
-      };
-    };
+    Functions: Record<string, never>;
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

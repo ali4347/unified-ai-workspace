@@ -55,11 +55,11 @@ src/components/
   sidebar/search-dialog.tsx   → global search (titles, message contents, project names)
   auth/                       → login form, setup notice
   chat/                       → chat-view (state owner + persistence), composer, message-list,
-                                message-content (code rendering)
-  providers/                  → ai-selector, connection-selector, provider-badge, catalog-context
+                                manual-handoff (manual mode panel), message-content (code rendering)
+  providers/                  → ai-selector, account-selector, provider-badge, catalog-context
   projects/project-manager.tsx→ project list + forms
   settings/theme-toggle.tsx   → light/dark/system switcher
-  settings/ai-usage.tsx       → Workspace Models availability + Bring Your Own API connections
+  settings/provider-accounts.tsx → connect/disconnect provider accounts (manual | API key)
   settings/extension-status.tsx  → companion extension connection status
 src/hooks/use-theme.ts        → theme preference ↔ localStorage("uaw-theme") + .dark class
 src/lib/
@@ -73,11 +73,10 @@ src/lib/
   accounts/actions.ts         → server actions: connect/disconnect provider accounts (metadata only)
   extension/client.ts         → postMessage client for the companion extension
   providers/catalog.ts        → catalog built from DB rows (+ static fallback pre-migration)
-  providers/registry.ts       → routing layer: Workspace (no auth header) vs BYOK (browser key)
+  providers/registry.ts       → registry with per-account routing: manual / official_api (mock only without an account)
   providers/model-map.ts      → catalog id → provider API model id (verified; DB is runtime source)
   providers/key-store.ts      → browser-only localStorage for user API keys (never server-side)
-  providers/server/proxy.ts   → shared plumbing + resolveCredential (mode, availability, quota)
-  providers/server/workspace.ts → server-only workspace credential + daily usage quota
+  providers/server/proxy.ts   → shared proxy plumbing (auth, rate limit, validation, model map)
   providers/server/claude.ts  → server half of the Claude official_api adapter (Anthropic SDK)
   supabase/client.ts          → createBrowserClient<Database>
   supabase/server.ts          → createServerClient<Database> over next/headers cookies (async)
@@ -128,14 +127,10 @@ Login page
 | Hand-written `Database` type (type aliases, not interfaces) | supabase-js needs implicit index signatures; `supabase gen types` can replace it later |
 | Adapter streaming = `onChunk` callback + AbortSignal | Matches PRD §25 promise shape while supporting §34 incremental output and §22 stop |
 | Registry built client-side from the catalog | Chat runs in the browser; per-account routing picks mock / official_api / manual behind the same interface |
-| Workspace mode is `accountId === null` | No schema change needed for the default mode, and the existing nullable column already meant "nothing connected" |
-| Model availability is code, not data | A model cannot become workspace-billable (owner-funded) through a database edit; unknown models default to BYOK-only |
-| BYOK adapter sets `requireAuthToken` | A missing browser key must fail loudly, never fall through to the workspace credential and bill the owner |
+| `manual` mode short-circuits in the UI, not the adapter | `sendMessage` cannot model a user-mediated round trip; the handoff panel owns it (PRD §7 manual) |
 | Assistant replies render fenced code only (no full Markdown) | Focused, dependency-free; code is what breaks layout when unrendered. Known gap: headings/lists/emphasis show as plain text |
 | No connected account blocks sending rather than answering with mock text | Simulated replies are for genuine mock mode, not a silent production default |
 | User API keys in browser localStorage only, proxied per request | PRD §19 — nothing credential-like server-side; provider-specific server logic lives only in the proxy route (adapter server-half) |
-| Workspace credential server-only, never `NEXT_PUBLIC_` | A `NEXT_PUBLIC_` provider key ships to every browser; a unit test asserts one is ignored |
-| Usage counter written only by a `security definer` function | The table has no user write policy, so a user cannot forge, decrement or delete their own metering |
 | Provider API model ids live in `models.capabilities.api_model`, mirrored in `model-map.ts` | Providers retire ids on their own schedule; a DB value can be refreshed by migration without a deploy, and the mirrored table keeps the app working pre-migration. A test parses the migration and fails on drift |
 | Model id changes ship as new forward-only migrations | Rule 9/15 — committed migrations are never edited; old mappings are archived in `capabilities.deprecated_api_models`, never deleted |
 

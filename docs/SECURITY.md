@@ -24,33 +24,21 @@ Binding rules from PRD §5, §7, §19, §32, §48, §59, §61–62. Violations b
 
 Never log: passwords, auth cookies, tokens, full provider sessions. Log instead: request id, provider, model, duration, status, error code (PRD §48). Analytics must not capture prompt content unless explicitly required (§49).
 
-## Provider credentials — two modes, two custodians
+## User-supplied API keys (`official_api` mode, M6+)
 
-**Workspace Models (server-held).** The provider credential is a server-only environment variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`), read inside the route handler. It must never be given a `NEXT_PUBLIC_` prefix — that would ship it to every browser — and is never written to localStorage, Supabase, client state, logs, or error payloads. `apps/web/src/lib/providers/server/workspace.ts` is the only reader; a unit test asserts a `NEXT_PUBLIC_`-prefixed provider key is ignored. Only a boolean ("configured or not") ever crosses to the client.
-
-**Bring Your Own API (user-held).** The user's own developer API key stays **only in their browser** (localStorage) and is sent as a per-request header to our same-origin proxy, which forwards it to the provider. No database column, no server-side persistence, no logging of the key or its presence. Disconnecting a connection clears the key from the browser. A BYOK request whose key is missing is refused rather than silently answered with the workspace credential — that would bill the wrong account.
-
-**Both modes.** Proxy routes require a signed-in portal user (never an open relay), enforce per-user rate limits and payload caps, and map provider errors to normalized codes with generic messages — no key material, no prompt content, no upstream response bodies.
-
-## Workspace usage control (owner-funded spend)
-
-Workspace Models spend the app owner's budget, so requests are metered server-side and the counter is tamper-resistant by construction: `public.workspace_usage` has a SELECT-own RLS policy and **no** insert/update/delete policy, and is written only by `consume_workspace_quota()`, a `security definer` function with an empty `search_path` that derives the user from `auth.uid()` rather than trusting the client. Increment and limit check are one atomic upsert, so concurrent requests cannot race past the limit. No service-role key is involved. BYOK turns are not metered — they spend the user's own provider quota.
-
-Model availability is policy in code (`lib/providers/model-map.ts`), not data: a model cannot become workspace-billable through a database edit, and an unrecognised model defaults to BYOK-only.
+- Keys are stored **only in the user's browser** (localStorage) and sent as a per-request header to our same-origin proxy route, which forwards them to the official provider API. No database column, no server-side persistence, no logging of the key or its presence.
+- Proxy routes require a signed-in portal user (never an open relay), enforce per-user rate limits and payload caps, and map provider errors to normalized codes with generic messages (no key material, no prompt content).
+- Disconnecting an API-key account clears the key from the browser.
 
 ## Compliance policy (provider integrations)
 
 Integration statuses: `supported | experimental | disabled | manual | official_api` (PRD §7). No adapter may steal cookies, request/store AI passwords, bypass rate/usage limits, defeat CAPTCHA, or circumvent provider protections — these are product non-goals (§5) and hard development rules (§61.13).
 
-**Standing engineering position:** consumer subscriptions (ChatGPT Free/Plus/Pro, Claude consumer plans) and developer APIs are separate products. The consumer terms of OpenAI, Anthropic, Google, Microsoft and Perplexity prohibit automated/programmatic access to their consumer web interfaces, so this codebase contains **no** consumer-site automation, no session/credential capture, no scraping, and never draws on consumer subscription quota. A user's Unified AI Workspace sign-in authenticates them to this workspace only; it is not a provider login.
+**Standing engineering position:** the consumer terms of service of OpenAI, Anthropic, Google, Microsoft and Perplexity currently prohibit automated/programmatic access to their consumer web interfaces. PRD §7 explicitly requires falling back to a compliant mode in that case. Therefore this codebase contains no consumer-site automation, and the viable integration modes for real providers are:
 
-The supported integration modes both use the **official developer APIs**:
-
-1. **Workspace Models** — the app owner's own API credential, held server-side and metered per user;
-2. **Bring Your Own API** — the user's own API credential, held in their browser (optional path allowed by PRD §6);
+1. `official_api` — user-supplied API keys via the official APIs (optional path allowed by PRD §6);
+2. `manual` — user-mediated flows with zero automation of the provider site;
 3. a provider-sanctioned integration mechanism, if one becomes available.
-
-The retired `manual` mode (user copy/paste) is no longer offered for new conversations; historical messages created under it remain readable.
 
 Each adapter must pass a written ToS review before its status may be set to anything other than `disabled`. Mock adapters are used for all development.
 

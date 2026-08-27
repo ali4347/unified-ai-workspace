@@ -6,9 +6,8 @@ import { useCatalog } from "@/components/providers/catalog-context";
 
 /**
  * Source badge on assistant messages (PRD §24), e.g. "Claude · Sonnet".
- * The pill says how the reply was produced. Workspace replies carry no pill
- * (that is the default path); "your API" marks a Bring-Your-Own-API reply.
- * "manual" and "mock" appear only on historical messages and still render.
+ * The pill labels how the reply was produced: "mock" for simulated replies,
+ * "manual" for user-mediated ones; official-API replies carry no pill.
  * Renders even if the provider/model has since vanished from the catalog.
  */
 export function ProviderBadge({
@@ -21,18 +20,8 @@ export function ProviderBadge({
   const catalog = useCatalog();
   const provider = catalog.find((e) => e.meta.slug === selection.providerSlug);
   const model = provider?.models.find((m) => m.id === selection.modelId);
-  // Live modes: workspace shows no pill (it is the default), BYOK shows
-  // whose key paid for it. Historical values keep rendering for old messages.
   const pill =
-    integration === "byok"
-      ? "your API"
-      : integration === "official_api"
-        ? "your API"
-        : integration === "manual"
-          ? "manual"
-          : integration === "mock"
-            ? "mock"
-            : null;
+    integration === "manual" ? "manual" : integration === "mock" ? "mock" : null;
 
   return (
     <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">

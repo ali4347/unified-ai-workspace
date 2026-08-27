@@ -1,19 +1,25 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FolderKanban } from "lucide-react";
+import { FolderKanban, Settings2 } from "lucide-react";
 import { PROVIDERS, type ProviderSelection } from "@uaw/types";
 import { isProviderError } from "@uaw/provider-core";
 import {
   getAccount,
+  getEntry,
   getModel,
   selectionForModel,
   type Catalog,
 } from "@/lib/providers/catalog";
 import { createRegistryFromCatalog } from "@/lib/providers/registry";
 import type { UiChatMessage } from "@/lib/chat/types";
-import { buildProviderContext, rollingSummary } from "@/lib/chat/context";
+import {
+  buildManualPackage,
+  buildProviderContext,
+  rollingSummary,
+} from "@/lib/chat/context";
 import {
   createConversation,
   deleteMessage,
@@ -24,19 +30,25 @@ import {
 } from "@/lib/chat/actions";
 import { CatalogProvider } from "@/components/providers/catalog-context";
 import { AiSelector } from "@/components/providers/ai-selector";
-import { ConnectionSelector } from "@/components/providers/connection-selector";
+import { AccountSelector } from "@/components/providers/account-selector";
 import { Composer } from "@/components/chat/composer";
+import { buttonVariants } from "@/components/ui/button";
+import { ManualHandoff } from "@/components/chat/manual-handoff";
 import { MessageList } from "@/components/chat/message-list";
 import { cn } from "@/lib/utils";
 
+interface ManualState {
+  assistantId: string;
+  providerName: string;
+  packageText: string;
+  selection: ProviderSelection;
+}
+
 /**
- * The Master Conversation view: chat header with model and connection
- * selectors, message list and composer.
- *
- * Every live turn is automatic and streamed. The connection selector chooses
- * between Workspace Models (server-held credential, no setup) and the user's
- * own Bring Your Own API connections. Historical manual-mode messages still
- * render; manual is not offered for new turns.
+ * The Master Conversation view: chat header with provider/model/account
+ * selectors, message list and composer. Replies flow through the provider
+ * registry — mock without a connected account, `official_api` via the proxy
+ * routes, `manual` via the user-mediated handoff panel (M6 gate decision).
  */
 export function ChatView({
   catalog,
@@ -66,6 +78,9 @@ export function ChatView({
     initialMessages ?? []
   );
   const [streamingId, setStreamingId] = React.useState<string | null>(null);
+  const [manualState, setManualState] = React.useState<ManualState | null>(
+    null
+  );
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const conversationIdRef = React.useRef<string | null>(
     initialConversationId ?? null
@@ -120,6 +135,7 @@ export function ChatView({
       conversationIdRef.current = null;
       setMessages([]);
       setStreamingId(null);
+      setManualState(null);
       setSaveError(null);
       setSelection(initialSelection);
       window.history.replaceState(null, "", "/chat");
@@ -221,8 +237,13 @@ export function ChatView({
 
   const send = async (text: string) => {
     setSaveError(null);
-    if (!getModel(catalog, selection.providerSlug, selection.modelId)) {
-      setSaveError("That model is no longer available. Pick another one.");
+    if (
+      !getModel(catalog, selection.providerSlug, selection.modelId) ||
+      !getAccount(catalog, selection.providerSlug, selection.accountId)
+    ) {
+      setSaveError(
+        "Select a connected account and an available model before sending."
+      );
       return;
     }
 
@@ -257,19 +278,21 @@ export function ChatView({
    * re-run it without duplicating the user's message. */
   const runAssistantTurn = async (text: string, history: UiChatMessage[]) => {
     const requestSelection = selection;
+    const entry = getEntry(catalog, requestSelection.providerSlug);
     const model = getModel(
       catalog,
       requestSelection.providerSlug,
       requestSelection.modelId
     );
-    // No account selected = Workspace Models (server-held credential).
     const account = getAccount(
       catalog,
       requestSelection.providerSlug,
       requestSelection.accountId
     );
-    if (!model) {
-      setSaveError("That model is no longer available. Pick another one.");
+    if (!model || !account) {
+      setSaveError(
+        "Select a connected account and an available model before sending."
+      );
       return;
     }
     const assistantId = crypto.randomUUID();
@@ -281,10 +304,37 @@ export function ChatView({
     });
     logHandoffIfSwitched(requestSelection, context, history);
 
-    // Every live turn is automatic: Workspace or Bring Your Own API.
-    const integration: UiChatMessage["integration"] = account
-      ? "byok"
-      : "workspace";
+    // ---- Manual mode: the USER performs the provider interaction (PRD §7).
+    if (account.integrationMode === "manual") {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: assistantId,
+          role: "assistant",
+          content: "",
+          status: "queued",
+          selection: requestSelection,
+          integration: "manual",
+          createdAt: Date.now(),
+        },
+      ]);
+      setManualState({
+        assistantId,
+        providerName: entry.meta.name,
+        selection: requestSelection,
+        packageText: buildManualPackage({
+          providerName: entry.meta.name,
+          history,
+          prompt: text,
+          projectInstructions,
+        }),
+      });
+      return;
+    }
+
+    // ---- Adapter path: official_api via our proxy route.
+    const integration =
+      account.integrationMode === "official_api" ? "official_api" : "mock";
     setMessages((prev) => [
       ...prev,
       {
@@ -368,6 +418,35 @@ export function ChatView({
     }
   };
 
+  const completeManual = (reply: string) => {
+    if (!manualState) return;
+    patchMessage(manualState.assistantId, {
+      content: reply,
+      status: "completed",
+    });
+    persistAssistant({
+      id: manualState.assistantId,
+      content: reply,
+      status: "completed",
+      selection: manualState.selection,
+      integration: "manual",
+    });
+    maintainSummary(
+      messages.map((m) =>
+        m.id === manualState.assistantId
+          ? { ...m, content: reply, status: "completed" as const }
+          : m
+      )
+    );
+    setManualState(null);
+  };
+
+  const cancelManual = () => {
+    if (!manualState) return;
+    setMessages((prev) => prev.filter((m) => m.id !== manualState.assistantId));
+    setManualState(null);
+  };
+
   const stop = () => {
     abortRef.current?.abort();
   };
@@ -417,11 +496,26 @@ export function ChatView({
   };
 
   const streaming = streamingId !== null;
-  const busy = streaming;
+  const busy = streaming || manualState !== null;
   const empty = messages.length === 0;
+  const activeAccount = getAccount(
+    catalog,
+    selection.providerSlug,
+    selection.accountId
+  );
 
-  const composerArea = (
+  const providerName = getEntry(catalog, selection.providerSlug).meta.name;
+  const composerArea = manualState ? (
+    <ManualHandoff
+      providerName={manualState.providerName}
+      packageText={manualState.packageText}
+      onSave={completeManual}
+      onCancel={cancelManual}
+    />
+  ) : activeAccount ? (
     <Composer onSend={send} onStop={stop} streaming={streaming} />
+  ) : (
+    <NoAccountNotice providerName={providerName} />
   );
 
   return (
@@ -444,11 +538,10 @@ export function ChatView({
               </span>
             )}
           </div>
-          <ConnectionSelector
+          <AccountSelector
             selection={selection}
-            model={getModel(catalog, selection.providerSlug, selection.modelId)}
             disabled={busy}
-            onSelectConnection={(accountId) =>
+            onSelectAccount={(accountId) =>
               changeSelection({ ...selection, accountId })
             }
           />
@@ -515,3 +608,26 @@ function EmptyState() {
   );
 }
 
+/** Shown instead of the composer when the active provider has no connected
+ * account. Sending is blocked rather than answered with simulated text. */
+function NoAccountNotice({ providerName }: Readonly<{ providerName: string }>) {
+  return (
+    <div className="rounded-2xl border border-dashed bg-card p-4 text-center">
+      <p className="text-sm font-medium">Connect a {providerName} account</p>
+      <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+        Choose manual mode to paste prompts and replies yourself, or add your own
+        API key for automatic replies. Your key stays in this browser.
+      </p>
+      <Link
+        href="/settings"
+        className={cn(
+          buttonVariants({ variant: "default", size: "sm" }),
+          "mt-3 gap-1.5"
+        )}
+      >
+        <Settings2 className="size-4" />
+        Open Settings
+      </Link>
+    </div>
+  );
+}

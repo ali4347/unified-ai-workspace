@@ -6,21 +6,16 @@ import {
   readProviderKey,
   requirePortalUser,
   resolveApiModel,
-  resolveCredential,
   checkRateLimit,
   validateChatBody,
   type ProxyRequestBody,
 } from "@/lib/providers/server/proxy";
 
 /**
- * Server half of the Anthropic integration. Streams replies for both
- * connection modes:
+ * Server half of the Claude `official_api` adapter (M6). Streams replies from
+ * the official Anthropic API using the user's own key, forwarded per request
+ * from their browser. The key is never stored or logged (PRD §19, §48).
  *
- *   Workspace — no `x-provider-key` header; uses the server-held
- *               ANTHROPIC_API_KEY, subject to the daily usage quota.
- *   BYOK      — the user's own key arrives per request and is used verbatim.
- *
- * Neither credential is ever stored, logged, or echoed back (PRD §19, §48).
  * Model ids come from the database (`models.capabilities.api_model`) and fall
  * back to the verified table in lib/providers/model-map.ts.
  */
@@ -40,6 +35,11 @@ export async function handleClaudeProxy(request: Request): Promise<Response> {
     return errorResponse(429, "USAGE_LIMIT", "Too many requests — slow down");
   }
 
+  const apiKey = readProviderKey(request);
+  if (!apiKey) {
+    return errorResponse(401, "LOGIN_REQUIRED", "Missing Anthropic API key");
+  }
+
   let body: ProxyRequestBody;
   try {
     body = (await request.json()) as ProxyRequestBody;
@@ -47,14 +47,11 @@ export async function handleClaudeProxy(request: Request): Promise<Response> {
     return errorResponse(400, "NETWORK_ERROR", "Invalid JSON body");
   }
 
-  // Key validation is only meaningful for a key the user just entered.
+  const client = new Anthropic({ apiKey });
+
   if (body.action === "validate") {
-    const candidate = readProviderKey(request);
-    if (!candidate) {
-      return errorResponse(400, "LOGIN_REQUIRED", "No API key to validate");
-    }
     try {
-      await new Anthropic({ apiKey: candidate }).models.list({ limit: 1 });
+      await client.models.list({ limit: 1 });
       return NextResponse.json({ ok: true });
     } catch (error) {
       return mapAnthropicError(error);
@@ -70,15 +67,6 @@ export async function handleClaudeProxy(request: Request): Promise<Response> {
   if (!apiModel) {
     return errorResponse(404, "MODEL_UNAVAILABLE", "Unknown Claude model");
   }
-
-  // Decides workspace vs BYOK and enforces availability, configuration and quota.
-  const credential = await resolveCredential(
-    "claude",
-    request,
-    body.model as string
-  );
-  if (!credential.ok) return credential.response;
-  const client = new Anthropic({ apiKey: credential.apiKey });
 
   const messages = (body.messages ?? []).map((m) => ({
     role: m.role,
