@@ -12,14 +12,20 @@ import { createClient } from "@/lib/supabase/server";
 
 const MAX_LABEL = 120;
 
+/**
+ * Records a Bring-Your-Own-API connection. METADATA ONLY: the row stores the
+ * provider, a user-chosen label and the mode — never the API key, which stays
+ * in the user's browser (see lib/providers/key-store.ts).
+ *
+ * The persisted mode value stays `official_api` for backward compatibility
+ * with existing rows; the product surface calls it "Bring Your Own API".
+ * `manual` is retired and can no longer be created.
+ */
 export async function connectAccount(input: {
   providerSlug: ProviderSlug;
-  mode: IntegrationMode;
   email?: string;
 }): Promise<{ id?: string; error?: string }> {
-  if (input.mode !== "manual" && input.mode !== "official_api") {
-    return { error: "Unsupported integration mode" };
-  }
+  const mode: IntegrationMode = "official_api";
 
   const supabase = await createClient();
   const {
@@ -48,7 +54,7 @@ export async function connectAccount(input: {
       provider_id: provider.id,
       email,
       status: "connected",
-      metadata: { mode: input.mode },
+      metadata: { mode },
       last_connected_at: new Date().toISOString(),
     })
     .select("id")

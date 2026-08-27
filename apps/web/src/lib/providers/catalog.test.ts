@@ -4,6 +4,7 @@ import {
   defaultSelection,
   FALLBACK_CATALOG,
   getEntry,
+  selectableAccounts,
   selectionForModel,
   selectionFromIds,
   type CatalogData,
@@ -66,6 +67,7 @@ const models: ModelRow[] = [
 
 const accounts: ConnectedAccountRow[] = [
   {
+    // Retired manual record: readable, never selectable.
     id: "a-1",
     user_id: "u-1",
     provider_id: "p-claude",
@@ -74,6 +76,21 @@ const accounts: ConnectedAccountRow[] = [
     subscription_label: null,
     status: "connected",
     metadata: { mode: "manual" },
+    last_connected_at: null,
+    last_used_at: null,
+    created_at: "",
+    updated_at: "",
+  },
+  {
+    // Live Bring-Your-Own-API connection (stored as the legacy mode value).
+    id: "a-2",
+    user_id: "u-1",
+    provider_id: "p-claude",
+    email: "my-anthropic-api",
+    display_name: null,
+    subscription_label: null,
+    status: "connected",
+    metadata: { mode: "official_api" },
     last_connected_at: null,
     last_used_at: null,
     created_at: "",
@@ -95,10 +112,12 @@ describe("buildCatalog", () => {
     const claude = getEntry(catalog, "claude");
     expect(claude.enabled).toBe(true);
     expect(claude.models.map((m) => m.id)).toEqual(["claude-sonnet"]);
+    // A retired `manual` row stays readable but is not selectable.
     expect(claude.accounts[0]).toMatchObject({
       id: "a-1",
       email: "ali@example.com",
       integrationMode: "manual",
+      legacy: true,
     });
     expect(getEntry(catalog, "gemini").enabled).toBe(false);
   });
@@ -107,30 +126,73 @@ describe("buildCatalog", () => {
 describe("defaultSelection / selectionForModel", () => {
   const catalog = buildCatalog(data);
 
-  it("picks the first enabled provider with its first model and account", () => {
+  it("defaults to Workspace mode so a new user can chat with no setup", () => {
+    // accountId null === Workspace Models (server-held credential).
     expect(defaultSelection(catalog)).toEqual({
       providerSlug: "claude",
       modelId: "claude-sonnet",
-      accountId: "a-1",
+      accountId: null,
     });
   });
 
-  it("keeps the account when switching models within a provider", () => {
-    const current = defaultSelection(catalog);
+  it("keeps a BYOK connection when the target model allows BYOK", () => {
+    const current = {
+      providerSlug: "claude" as const,
+      modelId: "claude-sonnet",
+      accountId: "a-1",
+    };
     const next = selectionForModel(catalog, current, {
       id: "claude-sonnet",
       providerSlug: "claude",
       name: "Sonnet",
+      availability: "both" as const,
     });
     expect(next.accountId).toBe("a-1");
   });
 
-  it("resets the account when switching providers", () => {
-    const current = defaultSelection(catalog);
+  it("drops to Workspace when the target model is workspace-only", () => {
+    const current = {
+      providerSlug: "claude" as const,
+      modelId: "claude-sonnet",
+      accountId: "a-1",
+    };
+    const next = selectionForModel(catalog, current, {
+      id: "claude-sonnet",
+      providerSlug: "claude",
+      name: "Sonnet",
+      availability: "workspace" as const,
+    });
+    expect(next.accountId).toBeNull();
+  });
+
+  it("selects a BYOK connection when the target model is BYOK-only", () => {
+    const next = selectionForModel(catalog, defaultSelection(catalog), {
+      id: "claude-opus",
+      providerSlug: "claude",
+      name: "Opus",
+      availability: "byok" as const,
+    });
+    // a-1 is a retired manual row and must be skipped; a-2 is the live one.
+    expect(next).toEqual({
+      providerSlug: "claude",
+      modelId: "claude-opus",
+      accountId: "a-2",
+    });
+  });
+
+  it("never offers a retired manual connection for a new turn", () => {
+    expect(selectableAccounts(catalog, "claude").map((a) => a.id)).toEqual([
+      "a-2",
+    ]);
+  });
+
+  it("resets the connection when switching providers", () => {
+    const current = { ...defaultSelection(catalog), accountId: "a-1" };
     const next = selectionForModel(catalog, current, {
       id: "gemini-pro",
       providerSlug: "gemini",
       name: "Pro",
+      availability: "both" as const,
     });
     expect(next).toEqual({
       providerSlug: "gemini",

@@ -1,4 +1,4 @@
-import type { ProviderSlug } from "@uaw/types";
+import type { ModelAvailability, ProviderSlug } from "@uaw/types";
 
 /**
  * Catalog model id → provider API model id.
@@ -68,6 +68,61 @@ export const RETIRED_API_MODELS: readonly string[] = [
   "gpt-5.1-chat-latest",
   "gpt-5-chat-latest",
 ];
+
+/**
+ * Availability policy per catalog model — which connection modes may run it,
+ * and whether it is offered at all. This is code-level (versioned, reviewable)
+ * rather than database state, so a model cannot become workspace-billable
+ * through a data edit alone.
+ *
+ * Workspace models are billed to the app owner, so the default posture is
+ * deliberate: the frontier-tier models are BYOK-only until the owner opts them
+ * in, while the cost-efficient tiers are available to everyone.
+ */
+export interface ModelPolicy {
+  availability: ModelAvailability;
+  enabled: boolean;
+  tier?: string;
+}
+
+export const MODEL_POLICY: Readonly<
+  Partial<Record<ProviderSlug, Readonly<Record<string, ModelPolicy>>>>
+> = {
+  claude: {
+    "claude-sonnet": { availability: "both", enabled: true, tier: "balanced" },
+    "claude-haiku": { availability: "both", enabled: true, tier: "fastest" },
+    // Frontier tiers cost the most per token: user's own key only by default.
+    "claude-opus": { availability: "byok", enabled: true, tier: "most capable" },
+    "claude-fable": { availability: "byok", enabled: true, tier: "frontier" },
+  },
+  chatgpt: {
+    "chatgpt-mini": { availability: "both", enabled: true, tier: "fastest" },
+    "chatgpt-balanced": { availability: "both", enabled: true, tier: "balanced" },
+    "chatgpt-flagship": { availability: "byok", enabled: true, tier: "frontier" },
+  },
+};
+
+const DEFAULT_POLICY: ModelPolicy = { availability: "byok", enabled: true };
+
+/** Policy for a catalog model id. Unknown models default to BYOK-only so a
+ * newly seeded model can never silently start spending workspace budget. */
+export function modelPolicy(
+  provider: ProviderSlug,
+  externalId: string
+): ModelPolicy {
+  return MODEL_POLICY[provider]?.[externalId] ?? DEFAULT_POLICY;
+}
+
+/** True when the model may be run through the given connection mode. */
+export function isModelAllowedFor(
+  provider: ProviderSlug,
+  externalId: string,
+  mode: "workspace" | "byok"
+): boolean {
+  const policy = modelPolicy(provider, externalId);
+  if (!policy.enabled) return false;
+  return policy.availability === "both" || policy.availability === mode;
+}
 
 /** Fallback lookup for a provider's catalog model id, already canonical.
  * Returns null when the id is unknown, which callers turn into

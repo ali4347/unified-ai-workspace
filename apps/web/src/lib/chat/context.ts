@@ -2,8 +2,10 @@ import type { ProviderChatMessage } from "@uaw/provider-core";
 import type { UiChatMessage } from "@/lib/chat/types";
 
 /**
- * Context Handoff Engine (M8, PRD §11–12). Transforms the Master
- * Conversation into context for the next provider using the PRD strategies:
+ * Context Handoff Engine (PRD §11–12). Transforms the Master Conversation
+ * into context for the next provider using the PRD strategies. This is what
+ * makes one conversation survive a provider switch, and it feeds every
+ * automatic call (Workspace and Bring Your Own API alike):
  *
  *   A `full_history`      — everything fits the budget
  *   B `recent_messages`   — recent window only (no summary exists yet)
@@ -153,22 +155,3 @@ export function rollingSummary(history: UiChatMessage[]): string {
   return digestMessages(splitRecent(messages).folded);
 }
 
-/** The copyable package for `manual` mode (PRD §7): same strategy engine,
- * rendered as text the user pastes into the provider's own interface. */
-export function buildManualPackage(options: {
-  providerName: string;
-  history: UiChatMessage[];
-  prompt: string;
-  projectInstructions?: string | null;
-}): string {
-  const context = buildProviderContext(options);
-  const parts: string[] = [];
-  if (context.system) parts.push(context.system);
-  const transcript = context.messages
-    .slice(0, -1)
-    .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
-    .join("\n\n");
-  if (transcript) parts.push(`Conversation so far:\n\n${transcript}`);
-  parts.push(`User: ${options.prompt}`);
-  return parts.join("\n\n---\n\n");
-}

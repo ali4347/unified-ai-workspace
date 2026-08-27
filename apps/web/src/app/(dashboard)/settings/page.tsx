@@ -1,11 +1,13 @@
-import type { IntegrationMode } from "@uaw/types";
+import type { ProviderSlug } from "@uaw/types";
 import { createClient } from "@/lib/supabase/server";
 import { getCatalogData } from "@/lib/db/queries";
+import { buildCatalog } from "@/lib/providers/catalog";
+import { isWorkspaceConfigured } from "@/lib/providers/server/workspace";
 import {
-  ProviderAccounts,
-  type ConnectableProvider,
-  type ProviderAccountItem,
-} from "@/components/settings/provider-accounts";
+  AiUsageSettings,
+  type ApiConnection,
+  type UsageProvider,
+} from "@/components/settings/ai-usage";
 import {
   Card,
   CardContent,
@@ -21,9 +23,12 @@ export const metadata = {
   title: "Settings",
 };
 
-// Providers with a live official_api proxy route (kept in sync with
-// lib/providers/registry.ts PROXY_ENDPOINTS).
-const PROXIED_PROVIDERS = new Set(["claude", "chatgpt"]);
+// Product names of the developer APIs behind each provider. These are API
+// products, not consumer ChatGPT/Claude subscriptions.
+const API_NAME: Partial<Record<ProviderSlug, string>> = {
+  claude: "Anthropic API",
+  chatgpt: "OpenAI API",
+};
 
 export default async function SettingsPage() {
   const supabase = await createClient();
@@ -32,38 +37,30 @@ export default async function SettingsPage() {
   } = await supabase.auth.getUser();
 
   const catalogData = await getCatalogData();
-  const providerById = new Map(
-    catalogData.providers.map((p) => [p.id, p] as const)
-  );
-  const connectableProviders: ConnectableProvider[] = catalogData.providers
-    .filter((p) => p.status === "active")
-    .sort((a, b) => a.sort_order - b.sort_order)
-    .map((p) => ({
-      slug: p.slug,
-      name: p.name,
-      connectable: p.integration_type !== "disabled",
-      hasProxy: PROXIED_PROVIDERS.has(p.slug),
+  const catalog = buildCatalog(catalogData);
+
+  const providers: UsageProvider[] = catalog
+    .filter((entry) => entry.enabled && API_NAME[entry.meta.slug])
+    .map((entry) => ({
+      slug: entry.meta.slug,
+      apiName: API_NAME[entry.meta.slug] as string,
+      workspaceModels: entry.models
+        .filter(
+          (m) => m.availability === "workspace" || m.availability === "both"
+        )
+        .map((m) => m.name),
+      // Server-only check: whether the deployment has a credential configured.
+      // Only this boolean crosses to the client — never the key itself.
+      workspaceReady: isWorkspaceConfigured(entry.meta.slug),
     }));
-  const accountItems: ProviderAccountItem[] = catalogData.accounts.flatMap(
-    (a) => {
-      const provider = providerById.get(a.provider_id);
-      if (!provider) return [];
-      const metadata =
-        a.metadata && typeof a.metadata === "object" && !Array.isArray(a.metadata)
-          ? (a.metadata as { mode?: unknown })
-          : {};
-      return [
-        {
-          id: a.id,
-          providerSlug: provider.slug,
-          email: a.email ?? a.display_name ?? "Unnamed account",
-          mode:
-            metadata.mode === "manual" || metadata.mode === "official_api"
-              ? (metadata.mode as IntegrationMode)
-              : undefined,
-        },
-      ];
-    }
+
+  const connections: ApiConnection[] = catalog.flatMap((entry) =>
+    entry.accounts.map((account) => ({
+      id: account.id,
+      providerSlug: entry.meta.slug,
+      label: account.email,
+      legacy: account.legacy,
+    }))
   );
 
   return (
@@ -92,18 +89,15 @@ export default async function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>AI providers</CardTitle>
+          <CardTitle>AI usage</CardTitle>
           <CardDescription>
-            Connect provider accounts. Manual mode needs no credentials; API
-            key mode keeps your key in this browser only — never on our
-            servers.
+            Chat with models provided by this workspace, or connect your own
+            developer API key. Your Unified AI Workspace sign-in is separate
+            from any provider account.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <ProviderAccounts
-            providers={connectableProviders}
-            accounts={accountItems}
-          />
+          <AiUsageSettings providers={providers} connections={connections} />
         </CardContent>
       </Card>
 

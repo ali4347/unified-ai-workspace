@@ -4,6 +4,9 @@ import { describe, expect, it } from "vitest";
 import type { ProviderSlug } from "@uaw/types";
 import {
   API_MODELS_VERIFIED_ON,
+  MODEL_POLICY,
+  isModelAllowedFor,
+  modelPolicy,
   API_MODEL_ALIASES,
   FALLBACK_API_MODELS,
   RETIRED_API_MODELS,
@@ -127,5 +130,64 @@ describe("fallbackApiModel", () => {
     expect(fallbackApiModel("claude", "claude-does-not-exist")).toBeNull();
     // A provider with no proxy route has no mapping at all.
     expect(fallbackApiModel("gemini", "gemini-pro")).toBeNull();
+  });
+});
+
+describe("model availability policy", () => {
+  it("gates workspace access per model, not per provider", () => {
+    // Cost-efficient tiers are owner-funded; frontier tiers are BYOK-only
+    // until the owner opts them in.
+    expect(isModelAllowedFor("claude", "claude-sonnet", "workspace")).toBe(true);
+    expect(isModelAllowedFor("claude", "claude-sonnet", "byok")).toBe(true);
+    expect(isModelAllowedFor("claude", "claude-fable", "workspace")).toBe(false);
+    expect(isModelAllowedFor("claude", "claude-fable", "byok")).toBe(true);
+    expect(isModelAllowedFor("chatgpt", "chatgpt-mini", "workspace")).toBe(true);
+    expect(isModelAllowedFor("chatgpt", "chatgpt-flagship", "workspace")).toBe(
+      false
+    );
+  });
+
+  it("defaults an unknown model to BYOK-only, never to workspace spend", () => {
+    expect(modelPolicy("claude", "some-future-model").availability).toBe("byok");
+    expect(isModelAllowedFor("claude", "some-future-model", "workspace")).toBe(
+      false
+    );
+    expect(isModelAllowedFor("claude", "some-future-model", "byok")).toBe(true);
+  });
+
+  it("treats a disabled model as unusable in both modes", () => {
+    const disabled = { availability: "both" as const, enabled: false };
+    // Guard the shape the kill switch relies on.
+    expect(disabled.enabled).toBe(false);
+    for (const [provider, models] of Object.entries(MODEL_POLICY)) {
+      for (const [id, policy] of Object.entries(models ?? {})) {
+        if (!policy.enabled) {
+          expect(isModelAllowedFor(provider as "claude", id, "workspace")).toBe(
+            false
+          );
+          expect(isModelAllowedFor(provider as "claude", id, "byok")).toBe(false);
+        }
+      }
+    }
+  });
+
+  it("only assigns policy to models that have a verified api_model mapping", () => {
+    for (const [provider, models] of Object.entries(MODEL_POLICY)) {
+      for (const id of Object.keys(models ?? {})) {
+        expect(
+          FALLBACK_API_MODELS[provider as "claude"]?.[id],
+          `${provider}/${id} has an availability policy but no canonical api_model`
+        ).toBeTruthy();
+      }
+    }
+  });
+
+  it("offers at least one workspace model per proxied provider", () => {
+    for (const provider of ["claude", "chatgpt"] as const) {
+      const workspaceModels = Object.entries(
+        MODEL_POLICY[provider] ?? {}
+      ).filter(([, p]) => p.enabled && p.availability !== "byok");
+      expect(workspaceModels.length).toBeGreaterThan(0);
+    }
   });
 });

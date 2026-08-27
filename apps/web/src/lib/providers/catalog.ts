@@ -11,6 +11,7 @@ import type {
   ModelRow,
   ProviderRow,
 } from "@/lib/db/database.types";
+import { modelPolicy } from "@/lib/providers/model-map";
 
 /**
  * Provider catalog: drives the provider/model/account selectors so nothing
@@ -55,12 +56,19 @@ export function buildCatalog(data: CatalogData): Catalog {
       models: data.models
         .filter((m) => m.provider_id === provider.id && m.status === "active")
         .sort((a, b) => a.sort_order - b.sort_order)
-        .map((m) => ({
-          id: m.external_id,
-          providerSlug: provider.slug,
-          name: m.name,
-          description: m.display_name ?? undefined,
-        })),
+        .map((m) => {
+          const policy = modelPolicy(provider.slug, m.external_id);
+          return {
+            id: m.external_id,
+            providerSlug: provider.slug,
+            name: m.name,
+            description: m.display_name ?? undefined,
+            availability: policy.availability,
+            enabled: policy.enabled,
+            tier: policy.tier,
+          };
+        })
+        .filter((m) => m.enabled),
       accounts: data.accounts
         .filter((a) => a.provider_id === provider.id)
         .map((a) => {
@@ -69,13 +77,19 @@ export function buildCatalog(data: CatalogData): Catalog {
               ? a.metadata
               : {};
           const mode = (metadata as { mode?: unknown }).mode;
+          const integrationMode =
+            mode === "manual" || mode === "official_api" ? mode : undefined;
           return {
             id: a.id,
             providerSlug: provider.slug,
             email: a.email ?? a.display_name ?? "Unnamed account",
             status: a.status,
-            integrationMode:
-              mode === "manual" || mode === "official_api" ? mode : undefined,
+            integrationMode,
+            // `official_api` rows are Bring-Your-Own-API connections. `manual`
+            // is retired: kept readable, never selectable for new turns.
+            connectionMode:
+              integrationMode === "manual" ? undefined : ("byok" as const),
+            legacy: integrationMode === "manual",
           };
         }),
     }));
@@ -121,6 +135,16 @@ export function getModel(
   return getEntry(catalog, slug).models.find((m) => m.id === modelId);
 }
 
+/** BYOK connections a user may actually select. Retired `manual` records are
+ * excluded so they cannot be chosen for a new turn, while remaining in the
+ * catalog for rendering historical messages. */
+export function selectableAccounts(
+  catalog: Catalog,
+  slug: ProviderSlug
+): ProviderAccountInfo[] {
+  return getEntry(catalog, slug).accounts.filter((a) => !a.legacy);
+}
+
 export function getAccount(
   catalog: Catalog,
   slug: ProviderSlug,
@@ -130,14 +154,29 @@ export function getAccount(
   return getEntry(catalog, slug).accounts.find((a) => a.id === accountId);
 }
 
-/** First enabled provider with at least one model. */
+/** Default selection for a new conversation: the first workspace-capable model
+ * of the first enabled provider, in Workspace mode (accountId null) so a signed
+ * in user can chat immediately without connecting anything. */
 export function defaultSelection(catalog: Catalog): ProviderSelection {
+  for (const entry of catalog) {
+    if (!entry.enabled) continue;
+    const workspaceModel = entry.models.find(
+      (m) => m.availability === "workspace" || m.availability === "both"
+    );
+    if (workspaceModel) {
+      return {
+        providerSlug: entry.meta.slug,
+        modelId: workspaceModel.id,
+        accountId: null,
+      };
+    }
+  }
   const first = catalog.find((e) => e.enabled && e.models.length > 0);
   if (!first) throw new Error("Catalog has no enabled provider with models");
   return {
     providerSlug: first.meta.slug,
     modelId: first.models[0].id,
-    accountId: first.accounts[0]?.id ?? null,
+    accountId: null,
   };
 }
 
@@ -148,15 +187,22 @@ export function selectionForModel(
   current: ProviderSelection,
   next: ModelInfo
 ): ProviderSelection {
-  if (next.providerSlug === current.providerSlug) {
+  const availability = next.availability ?? "both";
+  const sameProvider = next.providerSlug === current.providerSlug;
+  // Keep the current connection where it is valid for the target model,
+  // otherwise fall back to whichever mode the model does support.
+  if (sameProvider && current.accountId !== null && availability !== "workspace") {
     return { ...current, modelId: next.id };
   }
-  const entry = getEntry(catalog, next.providerSlug);
-  return {
-    providerSlug: next.providerSlug,
-    modelId: next.id,
-    accountId: entry.accounts[0]?.id ?? null,
-  };
+  if (availability === "byok") {
+    const account = selectableAccounts(catalog, next.providerSlug)[0];
+    return {
+      providerSlug: next.providerSlug,
+      modelId: next.id,
+      accountId: account?.id ?? null,
+    };
+  }
+  return { providerSlug: next.providerSlug, modelId: next.id, accountId: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -174,7 +220,18 @@ const model = (
   id: string,
   name: string,
   description?: string
-): ModelInfo => ({ id, providerSlug, name, description });
+): ModelInfo => {
+  const policy = modelPolicy(providerSlug, id);
+  return {
+    id,
+    providerSlug,
+    name,
+    description,
+    availability: policy.availability,
+    enabled: policy.enabled,
+    tier: policy.tier,
+  };
+};
 
 export const FALLBACK_CATALOG: Catalog = [
   {

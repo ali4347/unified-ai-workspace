@@ -1,6 +1,14 @@
 import { NextResponse } from "next/server";
 import type { ProviderErrorCode, ProviderSlug } from "@uaw/types";
-import { canonicalApiModel } from "@/lib/providers/model-map";
+import {
+  canonicalApiModel,
+  isModelAllowedFor,
+} from "@/lib/providers/model-map";
+import {
+  consumeWorkspaceQuota,
+  workspaceApiKey,
+} from "@/lib/providers/server/workspace";
+import { readProviderKey as readKey } from "@/lib/providers/server/validation";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -21,6 +29,73 @@ export {
   type ProxyChatMessage,
   type ProxyRequestBody,
 } from "@/lib/providers/server/validation";
+
+/**
+ * Resolves which credential answers this request, enforcing every rule that
+ * must not be client-trusted: model availability for the mode, workspace
+ * configuration, and the owner-funded daily quota.
+ *
+ * Absent `x-provider-key` = Workspace mode. Present = Bring Your Own API, and
+ * the user's key is used verbatim without ever being stored or logged.
+ */
+export async function resolveCredential(
+  provider: ProviderSlug,
+  request: Request,
+  catalogModelId: string
+): Promise<
+  | { ok: true; apiKey: string; mode: "workspace" | "byok" }
+  | { ok: false; response: NextResponse }
+> {
+  const userKey = readKey(request);
+  const mode = userKey ? "byok" : "workspace";
+
+  if (!isModelAllowedFor(provider, catalogModelId, mode)) {
+    return {
+      ok: false,
+      response: errorResponse(
+        403,
+        "MODEL_UNAVAILABLE",
+        mode === "workspace"
+          ? "This model isn't available on workspace models. Choose another model, or connect your own API key in Settings."
+          : "This model isn't available for your own API connection."
+      ),
+    };
+  }
+
+  if (mode === "byok") return { ok: true, apiKey: userKey as string, mode };
+
+  const key = workspaceApiKey(provider);
+  if (!key) {
+    return {
+      ok: false,
+      response: errorResponse(
+        503,
+        "UNSUPPORTED_ACTION",
+        "Workspace models are temporarily unavailable. You can connect your own API in Settings."
+      ),
+    };
+  }
+
+  const quota = await consumeWorkspaceQuota();
+  if (quota.degraded) {
+    // Visible in server logs only; carries no user content or secrets.
+    console.warn(
+      "[uaw] workspace quota not enforced: apply the workspace_usage migration"
+    );
+  }
+  if (!quota.allowed) {
+    return {
+      ok: false,
+      response: errorResponse(
+        429,
+        "USAGE_LIMIT",
+        `You've reached today's workspace limit of ${quota.limit} messages. It resets tomorrow — or connect your own API key in Settings for unlimited use.`
+      ),
+    };
+  }
+
+  return { ok: true, apiKey: key, mode };
+}
 
 export function errorResponse(
   status: number,

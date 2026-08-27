@@ -10,13 +10,16 @@ import { providerError } from "./errors";
 import type { ProviderErrorCode } from "@uaw/types";
 
 /**
- * Official-API adapter (integration mode `official_api`, PRD §7). Generic:
- * it streams from a same-origin server proxy route that holds ALL
- * provider-specific logic; the user-supplied key is injected per request via
- * `getAuthToken` (browser-held — never persisted server-side, PRD §19).
+ * Streams from a same-origin server proxy route that holds ALL
+ * provider-specific logic. Serves both connection modes:
+ *
+ *   Workspace  — no `x-provider-key` header; the route uses the server-held
+ *                credential, which never reaches the browser.
+ *   BYOK       — the user's key is injected per request via `getAuthToken`
+ *                (browser-held, never persisted server-side, PRD §19).
  *
  * Proxy contract: POST endpoint, JSON body { model, system?, messages },
- * `x-provider-key` header; 200 → plain text stream of reply chunks;
+ * optional `x-provider-key` header; 200 → plain text stream of reply chunks;
  * non-200 → JSON { code, message } with a normalized error code.
  */
 export interface HttpStreamAdapterConfig {
@@ -25,6 +28,14 @@ export interface HttpStreamAdapterConfig {
   models: ModelInfo[];
   /** Returns the user's API key (from browser storage) or null. */
   getAuthToken: () => string | null;
+  /**
+   * When true the request is refused if no token is available, instead of
+   * being sent without one. Bring-Your-Own-API callers MUST set this: sending
+   * a keyless request would silently fall through to the workspace credential
+   * and bill the wrong account. Workspace callers leave it false — the server
+   * supplies the credential and the browser never holds one.
+   */
+  requireAuthToken?: boolean;
 }
 
 const ERROR_CODES: readonly ProviderErrorCode[] = [
@@ -52,6 +63,9 @@ export class HttpStreamAdapter implements AIProviderAdapter {
   }
 
   async getConnectionStatus(): Promise<ConnectionStatus> {
+    if (!this.config.requireAuthToken) {
+      return { state: "connected", detail: "Workspace credential (server-held)" };
+    }
     return this.config.getAuthToken()
       ? { state: "connected", detail: "API key present" }
       : { state: "login_required", detail: "No API key stored" };
@@ -67,11 +81,11 @@ export class HttpStreamAdapter implements AIProviderAdapter {
 
   async sendMessage(request: ProviderMessageRequest): Promise<ProviderResponse> {
     const token = this.config.getAuthToken();
-    if (!token) {
+    if (!token && this.config.requireAuthToken) {
       throw providerError(
         "LOGIN_REQUIRED",
         this.slug,
-        "Add your API key in Settings → AI providers to use this account."
+        "This connection has no API key in this browser. Re-enter it in Settings → AI usage, or switch to Workspace models."
       );
     }
 
@@ -81,7 +95,8 @@ export class HttpStreamAdapter implements AIProviderAdapter {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-provider-key": token,
+          // Absent header = Workspace mode; the route uses its own credential.
+          ...(token ? { "x-provider-key": token } : {}),
         },
         body: JSON.stringify({
           model: request.model.id,

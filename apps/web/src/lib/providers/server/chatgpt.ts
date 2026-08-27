@@ -5,16 +5,17 @@ import {
   readProviderKey,
   requirePortalUser,
   resolveApiModel,
+  resolveCredential,
   checkRateLimit,
   validateChatBody,
   type ProxyRequestBody,
 } from "@/lib/providers/server/proxy";
 
 /**
- * Server half of the ChatGPT `official_api` adapter (M7). Streams replies
- * from the official OpenAI Chat Completions API using the user's own key,
- * forwarded per request from their browser — never stored or logged
- * (PRD §19, §48). Raw fetch + SSE parsing; no SDK dependency needed.
+ * Server half of the OpenAI integration. Streams replies for both connection
+ * modes: Workspace (server-held OPENAI_API_KEY, subject to the daily usage
+ * quota) and BYOK (the user's own key, arriving per request). Neither is ever
+ * stored or logged (PRD §19, §48). Raw fetch + SSE parsing; no SDK needed.
  *
  * Endpoint choice re-verified 2026-08-27: /v1/chat/completions is not
  * deprecated and every mapped GPT-5.6 model lists it as supported.
@@ -34,11 +35,6 @@ export async function handleChatGptProxy(request: Request): Promise<Response> {
     return errorResponse(429, "USAGE_LIMIT", "Too many requests — slow down");
   }
 
-  const apiKey = readProviderKey(request);
-  if (!apiKey) {
-    return errorResponse(401, "LOGIN_REQUIRED", "Missing OpenAI API key");
-  }
-
   let body: ProxyRequestBody;
   try {
     body = (await request.json()) as ProxyRequestBody;
@@ -46,9 +42,14 @@ export async function handleChatGptProxy(request: Request): Promise<Response> {
     return errorResponse(400, "NETWORK_ERROR", "Invalid JSON body");
   }
 
+  // Key validation is only meaningful for a key the user just entered.
   if (body.action === "validate") {
+    const candidate = readProviderKey(request);
+    if (!candidate) {
+      return errorResponse(400, "LOGIN_REQUIRED", "No API key to validate");
+    }
     const response = await fetch(`${OPENAI_BASE}/models?limit=1`, {
-      headers: { authorization: `Bearer ${apiKey}` },
+      headers: { authorization: `Bearer ${candidate}` },
     }).catch(() => null);
     if (!response) {
       return errorResponse(502, "NETWORK_ERROR", "Could not reach OpenAI");
@@ -66,6 +67,15 @@ export async function handleChatGptProxy(request: Request): Promise<Response> {
   if (!apiModel) {
     return errorResponse(404, "MODEL_UNAVAILABLE", "Unknown ChatGPT model");
   }
+
+  // Decides workspace vs BYOK and enforces availability, configuration and quota.
+  const credential = await resolveCredential(
+    "chatgpt",
+    request,
+    body.model as string
+  );
+  if (!credential.ok) return credential.response;
+  const apiKey = credential.apiKey;
 
   const messages: Array<{ role: string; content: string }> = [];
   if (body.system) messages.push({ role: "system", content: body.system });

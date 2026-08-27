@@ -53,13 +53,30 @@ export interface ModelInfo {
   providerSlug: ProviderSlug;
   name: string;
   description?: string;
+  /** Which connection modes may run this model. Defaults to "both". */
+  availability?: ModelAvailability;
+  /** False hides the model from selection entirely (kill switch). */
+  enabled?: boolean;
+  /** Optional label shown next to the model, e.g. "fast", "most capable". */
+  tier?: string;
 }
 
-/** Per-account compliant integration mode (M6 gate; PRD §7):
- * - `manual`: the user performs the provider interaction; the app builds the
- *   context package and persists the workflow. Zero credentials.
- * - `official_api`: official provider API with a user-supplied key that is
- *   held in the user's browser only — never stored server-side. */
+/** How a chat turn reaches a provider.
+ * - `workspace`: Unified AI Workspace's own server-held provider credential.
+ *   The user needs no key; the secret never leaves the server.
+ * - `byok`: the user's own OpenAI/Anthropic API credential, held in their
+ *   browser and forwarded per request. Their provider account is billed.
+ * Consumer ChatGPT/Claude subscriptions are a separate product and are never
+ * used: no session automation, no scraping (see docs/SECURITY.md). */
+export type ConnectionMode = "workspace" | "byok";
+
+/** Which connection modes a model may be used through. */
+export type ModelAvailability = "workspace" | "byok" | "both";
+
+/** Legacy per-account mode values persisted in `connected_accounts.metadata`.
+ * `official_api` rows are read as `byok`. `manual` is retired: those rows and
+ * their historical messages stay readable, but manual is not offered for new
+ * conversations. */
 export type IntegrationMode = "manual" | "official_api";
 
 /** A connected provider account as shown in selectors (PRD §16).
@@ -70,14 +87,27 @@ export interface ProviderAccountInfo {
   email: string;
   status: ProviderConnectionState;
   integrationMode?: IntegrationMode;
+  /** Resolved connection mode: `official_api` rows read as `byok`; `manual`
+   * rows are legacy and cannot be selected for new turns. */
+  connectionMode?: ConnectionMode;
+  /** True for retired `manual` records kept only so old chats stay readable. */
+  legacy?: boolean;
 }
 
-/** The active provider/model/account of a conversation (PRD §15–16, §31).
- * `accountId` is null until the user has a connected account (M6). */
+/** The active provider/model/connection of a conversation (PRD §15–16, §31).
+ * `accountId === null` means Workspace Models (server-held credential);
+ * a non-null id selects one of the user's own Bring-Your-Own-API connections. */
 export interface ProviderSelection {
   providerSlug: ProviderSlug;
   modelId: string;
   accountId: string | null;
+}
+
+/** Workspace mode is represented by the absence of a connected account. */
+export function connectionModeOf(
+  selection: Pick<ProviderSelection, "accountId">
+): ConnectionMode {
+  return selection.accountId === null ? "workspace" : "byok";
 }
 
 // ---------------------------------------------------------------------------
