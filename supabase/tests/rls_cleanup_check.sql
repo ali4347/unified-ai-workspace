@@ -28,8 +28,14 @@
 --   production-data-untouched guarantee without needing a pre-test snapshot to
 --   survive the rollback.
 --
--- Success line:  Cleanup verified: no RLS fixture rows remain.
--- Any failure raises with the exact table and marker that leaked.
+-- Success is confirmed from ONE VISIBLE RESULT ROW (the hosted SQL Editor
+-- surfaces SELECT result sets but not RAISE NOTICE output):
+--
+--     status            | fixture_rows | test_identities | mutated_values
+--     CLEANUP_VERIFIED  | 0            | 0               | 0
+--
+-- Any failure raises with the exact table and marker that leaked, and no row is
+-- returned.
 -- ===========================================================================
 
 do $$
@@ -148,26 +154,29 @@ begin
   select count(*) into n from public.models where external_id = 'rogue-model' or name = 'hijacked';
   if n <> 0 then raise exception 'CLEANUP FAIL: models reference data was modified by the suite', n; end if;
 
-  raise notice '-------------------------------------------------------------';
   raise notice 'Cleanup verified: no RLS fixture rows remain.';
-  raise notice 'No de77de77- ids, no @example.invalid identities, no mutated test values,';
-  raise notice 'reference data intact. Post-test counts follow for optional comparison.';
-  raise notice '-------------------------------------------------------------';
 end $$;
 
--- Post-test counts — compare against the "Pre-test counts" notice emitted by
--- rls_checks.sql if you want an explicit numeric confirmation as well.
-do $$
-begin
-  raise notice 'Post-test counts — auth.users=%, profiles=%, connected_accounts=%, projects=%, conversations=%, messages=%, attachments=%, provider_sessions=%, extension_devices=%, provider_events=%',
-    (select count(*) from auth.users),
-    (select count(*) from public.profiles),
-    (select count(*) from public.connected_accounts),
-    (select count(*) from public.projects),
-    (select count(*) from public.conversations),
-    (select count(*) from public.messages),
-    (select count(*) from public.attachments),
-    (select count(*) from public.provider_sessions),
-    (select count(*) from public.extension_devices),
-    (select count(*) from public.provider_events);
-end $$;
+-- Visible success row. Reaching this SELECT at all means every check above
+-- passed (each raises on failure); the zero columns are re-counted live rather
+-- than asserted constants, and the post-test counts are returned as columns for
+-- optional comparison against the "Pre-test counts" notice from rls_checks.sql.
+select
+  'CLEANUP_VERIFIED'::text as status,
+  (select count(*) from public.connected_accounts where id::text like 'de77de77-%')
+  + (select count(*) from public.projects          where id::text like 'de77de77-%')
+  + (select count(*) from public.conversations     where id::text like 'de77de77-%')
+  + (select count(*) from public.messages          where id::text like 'de77de77-%')
+  + (select count(*) from public.attachments       where id::text like 'de77de77-%')
+  + (select count(*) from public.provider_sessions where id::text like 'de77de77-%')
+  + (select count(*) from public.extension_devices where id::text like 'de77de77-%')
+  + (select count(*) from public.provider_events   where id::text like 'de77de77-%')   as fixture_rows,
+  (select count(*) from auth.users where email like '%@example.invalid')
+  + (select count(*) from public.profiles where email like '%@example.invalid')        as test_identities,
+  (select count(*) from public.conversations where title in ('hijacked', 'A renamed'))
+  + (select count(*) from public.messages    where content in ('hijacked', 'A edited')) as mutated_values,
+  (select count(*) from auth.users)          as auth_users,
+  (select count(*) from public.profiles)     as profiles,
+  (select count(*) from public.projects)     as projects,
+  (select count(*) from public.conversations) as conversations,
+  (select count(*) from public.messages)     as messages;

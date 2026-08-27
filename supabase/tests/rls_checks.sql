@@ -36,9 +36,18 @@
 --     that session-local state survives a transaction boundary, so cleanup
 --     verification is a separate, self-contained, read-only query.
 --
--- A GREEN RUN MEANS: every assertion below passed. The suite prints
--- "RLS checks passed: N/N" — if the run ends any other way, treat it as a
--- failure and do NOT weaken any policy to make it pass.
+-- A GREEN RUN MEANS: every assertion below passed. The suite ends by returning
+-- ONE VISIBLE RESULT ROW:
+--
+--     status              | assertions_passed | assertions_expected
+--     RLS_CHECKS_PASSED   | 110               | 110
+--
+-- Confirm the run from that row, NOT from RAISE NOTICE output — the hosted
+-- Supabase SQL Editor surfaces SELECT result sets but does not reliably display
+-- notices. assertions_passed is read from the live `test.checks` counter and a
+-- guard raises if it is anything other than 110, so the row cannot lie. If the
+-- run ends any other way, treat it as a failure and do NOT weaken any policy to
+-- make it pass.
 --
 -- INTENDED-BEHAVIOUR NOTES (PRD-driven asymmetries — tested as designed, not
 -- forced into a uniform matrix):
@@ -253,7 +262,7 @@ end $$;
 -- ---------------------------------------------------------------------------
 
 set local role authenticated;
-select pg_temp.become(current_setting('test.uid_a'));
+do $$ begin perform pg_temp.become(current_setting('test.uid_a')); end $$;
 
 -- Harness canary: if RLS were bypassed (e.g. still running as owner, or FORCE
 -- RLS missing), user A would see BOTH profiles and every check below would be a
@@ -1056,7 +1065,7 @@ end $$;
 --     cannot come from A simply having no data.
 -- ---------------------------------------------------------------------------
 
-select pg_temp.become(current_setting('test.uid_b'));
+do $$ begin perform pg_temp.become(current_setting('test.uid_b')); end $$;
 
 do $$
 declare
@@ -1083,16 +1092,31 @@ end $$;
 
 reset role;
 
+-- Guard: the suite must have executed EXACTLY the expected number of
+-- assertions. A lower count means a section was skipped (e.g. only part of the
+-- file was executed), which would otherwise produce a misleading PASS row.
 do $$
 declare
-  total integer := current_setting('test.checks', true)::int;
+  total    integer := coalesce(current_setting('test.checks', true), '0')::int;
+  expected constant integer := 110;
 begin
-  raise notice '-------------------------------------------------------------';
-  raise notice 'RLS checks passed: %/% (all assertions green)', total, total;
-  raise notice 'Rolling back — no fixture row is retained.';
-  raise notice 'NEXT: run supabase/tests/rls_cleanup_check.sql as a separate query.';
-  raise notice '-------------------------------------------------------------';
+  if total <> expected then
+    raise exception
+      'FAIL harness/assertion-count: executed % assertion(s), expected % — did the whole file run? Do NOT treat this as a pass.',
+      total, expected;
+  end if;
+  raise notice 'RLS checks passed: %/% (all assertions green)', total, expected;
 end $$;
+
+-- Visible success row. The hosted Supabase SQL Editor surfaces SELECT result
+-- sets but not RAISE NOTICE output, so the pass signal must be a result row.
+-- assertions_passed is read from the live counter — never hard-coded — and the
+-- guard above guarantees this row cannot be reached with a wrong count.
+select
+  'RLS_CHECKS_PASSED'::text                                        as status,
+  coalesce(current_setting('test.checks', true), '0')::int         as assertions_passed,
+  110                                                              as assertions_expected,
+  'Now run supabase/tests/rls_cleanup_check.sql as a separate query'::text as next_step;
 
 rollback;
 

@@ -96,13 +96,17 @@ psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/rls_cleanup_check.s
 
 Run the two scripts as **two separate queries**, in order:
 
-| Step | Action | Expect |
+**Confirm success from the visible result row, not from notices.** The hosted SQL Editor surfaces `SELECT` result sets but does not reliably display `RAISE NOTICE` output, so each script ends by returning one row you can read directly in the results pane.
+
+| Step | Action | Expect (results pane) |
 | --- | --- | --- |
 | 1 | Run `rls_checks.sql` whole | — |
-| 2 | Confirm the Notices pane shows **`RLS checks passed: 110/110`** | any other ending is a failure |
+| 2 | Confirm the returned row | `RLS_CHECKS_PASSED \| 110 \| 110` |
 | 3 | Run `rls_cleanup_check.sql` as a **new query** | — |
-| 4 | Confirm **`Cleanup verified: no RLS fixture rows remain.`** | plus post-test counts |
-| 5 | Later, separately, run `storage_rls_check.ts` for storage authorization | `Storage authorization checks passed: 9/9` |
+| 4 | Confirm the returned row | `CLEANUP_VERIFIED \| 0 \| 0 \| 0` (+ post-test counts) |
+| 5 | Later, separately, run `storage_rls_check.ts` for storage authorization | `Storage authorization checks passed: 9/9` (console) |
+
+`assertions_passed` is read from the live `test.checks` counter — never hard-coded — and a guard raises if it is anything other than 110, so a partial run (e.g. only a highlighted fragment executed) fails loudly instead of returning a misleading PASS. If a script raises, **no row is returned**: an empty results pane means failure, and the error text names the exact assertion.
 
 Step 3 must be a fresh query, not appended to step 1: the suite ends at `ROLLBACK` and deliberately leaves no session state behind.
 
@@ -114,7 +118,7 @@ The primary guarantee is stronger than counts: `rls_cleanup_check.sql` proves th
 
 ### SQL Editor notes
 
-- Read the **Notices** pane, not just the results grid. Both success lines (`RLS checks passed: 110/110`, `Cleanup verified: no RLS fixture rows remain.`) and the count notices are all `RAISE NOTICE` output.
+- Judge success by the **returned row**, not the Notices pane — notices are emitted too, but the hosted Editor may not show them.
 - Run each file **whole**. Executing only a highlighted fragment can leave the `begin;` open or skip the `rollback;`.
 - Do not rely on session state between the two scripts — by design there is none.
 
