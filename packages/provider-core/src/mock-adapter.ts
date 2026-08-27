@@ -108,9 +108,9 @@ export class MockAdapter implements AIProviderAdapter {
   private buildReply(model: ModelInfo, prompt: string): string {
     const quoted = prompt.length > 160 ? `${prompt.slice(0, 160)}…` : prompt;
     return [
-      `This is a mock ${this.providerName} (${model.name}) reply — no real provider is connected yet. Real integrations arrive with Milestone 6, after the compliance gate.`,
+      `Simulated ${this.providerName} (${model.name}) reply — this workspace is running in mock mode, so no provider was contacted.`,
       `You said: “${quoted}”`,
-      `This thread is a Master Conversation: switch the provider or model in the header and send another message — every reply stays in the same conversation, each labeled with the provider that produced it.`,
+      `Connect a ${this.providerName} account in Settings to exchange real messages. Replies stay in this Master Conversation whichever provider produces them.`,
     ].join("\n\n");
   }
 }

@@ -51,9 +51,11 @@ export function AiSelector({
           <div key={entry.meta.slug} className="py-1">
             <div className="flex items-center gap-2 px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               {entry.meta.name}
-              <span className="rounded-full border px-1.5 py-px text-[10px] font-normal normal-case">
-                {entry.enabled ? "Mock" : "Phase 2"}
-              </span>
+              {!entry.enabled && (
+                <span className="rounded-full border px-1.5 py-px text-[10px] font-normal normal-case">
+                  soon
+                </span>
+              )}
             </div>
             {entry.models.map((model) => (
               <ModelRow

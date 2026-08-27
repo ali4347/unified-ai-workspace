@@ -86,7 +86,7 @@ function ProviderSection({
 
       {accounts.length === 0 && !connecting && (
         <p className="text-xs text-muted-foreground">
-          No accounts connected — chat uses clearly-labeled mock replies.
+          No accounts connected. Connect one to start chatting with this provider.
         </p>
       )}
 

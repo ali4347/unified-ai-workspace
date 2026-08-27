@@ -1,10 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeftRight, Check, Copy } from "lucide-react";
+import { ArrowLeftRight, Check, Copy, RotateCw } from "lucide-react";
 import type { UiChatMessage } from "@/lib/chat/types";
 import { useCatalog } from "@/components/providers/catalog-context";
 import { ProviderBadge } from "@/components/providers/provider-badge";
+import { MessageContent } from "@/components/chat/message-content";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -14,12 +15,17 @@ import { Button } from "@/components/ui/button";
  */
 export function MessageList({
   messages,
-}: Readonly<{ messages: UiChatMessage[] }>) {
+  onRetry,
+}: Readonly<{ messages: UiChatMessage[]; onRetry?: () => void }>) {
   const bottomRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [messages]);
+
+  const lastAssistantId = [...messages]
+    .reverse()
+    .find((m) => m.role === "assistant")?.id;
 
   let lastProviderSlug: string | undefined;
 
@@ -43,7 +49,14 @@ export function MessageList({
             {message.role === "user" ? (
               <UserMessage message={message} />
             ) : (
-              <AssistantMessage message={message} />
+              <AssistantMessage
+                message={message}
+                onRetry={
+                  // Only the newest turn can be retried — replaying an older
+                  // one would fork the conversation.
+                  message.id === lastAssistantId ? onRetry : undefined
+                }
+              />
             )}
           </React.Fragment>
         );
@@ -80,39 +93,63 @@ function ProviderChangeDivider({
 function UserMessage({ message }: Readonly<{ message: UiChatMessage }>) {
   return (
     <div className="flex justify-end">
-      <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-sm text-secondary-foreground">
+      <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-sm text-secondary-foreground">
         {message.content}
       </div>
     </div>
   );
 }
 
-function AssistantMessage({ message }: Readonly<{ message: UiChatMessage }>) {
+function AssistantMessage({
+  message,
+  onRetry,
+}: Readonly<{ message: UiChatMessage; onRetry?: () => void }>) {
+  const incomplete =
+    message.status === "failed" || message.status === "cancelled";
+
   return (
-    <div className="group flex flex-col gap-1.5">
+    <div className="group flex min-w-0 flex-col gap-1.5">
       {message.selection && (
         <ProviderBadge
           selection={message.selection}
           integration={message.integration}
         />
       )}
-      <div className="whitespace-pre-wrap text-sm leading-relaxed">
-        {message.content}
+      <div className="min-w-0">
+        <MessageContent content={message.content} />
         {message.status === "streaming" && (
           <span
-            aria-label="Generating"
+            aria-label="Generating response"
             className="ml-0.5 inline-block h-4 w-2 animate-pulse rounded-sm bg-foreground/70 align-text-bottom"
           />
         )}
+        {message.status === "queued" && message.content.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            Waiting for the reply you paste back…
+          </p>
+        )}
       </div>
-      <div className="flex h-7 items-center gap-2">
+      <div className="flex min-h-7 flex-wrap items-center gap-2">
         {message.status === "cancelled" && (
           <span className="text-xs text-muted-foreground">Stopped</span>
         )}
         {message.status === "failed" && (
-          <span className="text-xs text-destructive">Failed</span>
+          <span className="text-xs text-destructive">
+            Couldn&apos;t get a reply
+          </span>
         )}
-        {message.status === "completed" && (
+        {incomplete && onRetry && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1.5 text-xs"
+            onClick={onRetry}
+          >
+            <RotateCw className="size-3" />
+            Try again
+          </Button>
+        )}
+        {message.status === "completed" && message.content.length > 0 && (
           <CopyButton content={message.content} />
         )}
       </div>

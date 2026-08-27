@@ -66,8 +66,8 @@ export function Composer({
           variant="ghost"
           size="icon"
           disabled
-          aria-label="Attach file"
-          title="Attachments arrive with Milestone 3"
+          aria-label="Attach file (not available yet)"
+          title="File attachments are not available yet"
         >
           <Paperclip />
         </Button>

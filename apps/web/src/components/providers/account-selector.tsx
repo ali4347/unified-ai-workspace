@@ -61,7 +61,7 @@ export function AccountSelector({
         ))}
         {entry.accounts.length === 0 && (
           <p className="px-2 py-1.5 text-sm text-muted-foreground">
-            No accounts connected — replies stay mock
+            No accounts connected yet
           </p>
         )}
         <Link

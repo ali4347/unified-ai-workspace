@@ -124,7 +124,7 @@ export default async function SettingsPage() {
         <CardHeader>
           <CardTitle>General</CardTitle>
           <CardDescription>
-            Language and default project settings arrive with Milestone 3.
+            Appearance settings for this workspace.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex items-center justify-between gap-4">

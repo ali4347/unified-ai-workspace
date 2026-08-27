@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FolderKanban } from "lucide-react";
+import { FolderKanban, Settings2 } from "lucide-react";
 import { PROVIDERS, type ProviderSelection } from "@uaw/types";
 import { isProviderError } from "@uaw/provider-core";
 import {
@@ -21,6 +22,7 @@ import {
 } from "@/lib/chat/context";
 import {
   createConversation,
+  deleteMessage,
   logProviderEvent,
   saveMessage,
   updateConversationSelection,
@@ -30,6 +32,7 @@ import { CatalogProvider } from "@/components/providers/catalog-context";
 import { AiSelector } from "@/components/providers/ai-selector";
 import { AccountSelector } from "@/components/providers/account-selector";
 import { Composer } from "@/components/chat/composer";
+import { buttonVariants } from "@/components/ui/button";
 import { ManualHandoff } from "@/components/chat/manual-handoff";
 import { MessageList } from "@/components/chat/message-list";
 import { cn } from "@/lib/utils";
@@ -234,22 +237,15 @@ export function ChatView({
 
   const send = async (text: string) => {
     setSaveError(null);
-    const requestSelection = selection;
-    const entry = getEntry(catalog, requestSelection.providerSlug);
-    const model = getModel(
-      catalog,
-      requestSelection.providerSlug,
-      requestSelection.modelId
-    );
-    if (!model) {
-      setSaveError("Selected model is unavailable");
+    if (
+      !getModel(catalog, selection.providerSlug, selection.modelId) ||
+      !getAccount(catalog, selection.providerSlug, selection.accountId)
+    ) {
+      setSaveError(
+        "Select a connected account and an available model before sending."
+      );
       return;
     }
-    const account = getAccount(
-      catalog,
-      requestSelection.providerSlug,
-      requestSelection.accountId
-    );
 
     const userMessage: UiChatMessage = {
       id: crypto.randomUUID(),
@@ -259,7 +255,6 @@ export function ChatView({
       createdAt: Date.now(),
     };
     const history = [...messages];
-    const assistantId = crypto.randomUUID();
 
     setMessages((prev) => [...prev, userMessage]);
 
@@ -276,6 +271,32 @@ export function ChatView({
       );
     }
 
+    await runAssistantTurn(text, history);
+  };
+
+  /** Produces the assistant turn for `text`. Split out of send() so a retry can
+   * re-run it without duplicating the user's message. */
+  const runAssistantTurn = async (text: string, history: UiChatMessage[]) => {
+    const requestSelection = selection;
+    const entry = getEntry(catalog, requestSelection.providerSlug);
+    const model = getModel(
+      catalog,
+      requestSelection.providerSlug,
+      requestSelection.modelId
+    );
+    const account = getAccount(
+      catalog,
+      requestSelection.providerSlug,
+      requestSelection.accountId
+    );
+    if (!model || !account) {
+      setSaveError(
+        "Select a connected account and an available model before sending."
+      );
+      return;
+    }
+    const assistantId = crypto.randomUUID();
+
     const context = buildProviderContext({
       history,
       prompt: text,
@@ -284,7 +305,7 @@ export function ChatView({
     logHandoffIfSwitched(requestSelection, context, history);
 
     // ---- Manual mode: the USER performs the provider interaction (PRD §7).
-    if (account?.integrationMode === "manual") {
+    if (account.integrationMode === "manual") {
       setMessages((prev) => [
         ...prev,
         {
@@ -311,9 +332,9 @@ export function ChatView({
       return;
     }
 
-    // ---- Adapter path: mock (no account) or official_api via proxy.
+    // ---- Adapter path: official_api via our proxy route.
     const integration =
-      account?.integrationMode === "official_api" ? "official_api" : "mock";
+      account.integrationMode === "official_api" ? "official_api" : "mock";
     setMessages((prev) => [
       ...prev,
       {
@@ -342,7 +363,13 @@ export function ChatView({
       if (status === "completed") {
         maintainSummary([
           ...history,
-          userMessage,
+          {
+            id: `${assistantId}-prompt`,
+            role: "user" as const,
+            content: text,
+            status: "completed" as const,
+            createdAt: Date.now(),
+          },
           {
             id: assistantId,
             role: "assistant",
@@ -424,6 +451,27 @@ export function ChatView({
     abortRef.current?.abort();
   };
 
+  /** Re-runs the newest turn after a failure or a stop. The stale assistant
+   * row is removed locally and in the database so a reload shows one reply,
+   * not a failed one followed by its replacement. */
+  const retryLast = async () => {
+    setSaveError(null);
+    const lastUserIndex = messages.map((m) => m.role).lastIndexOf("user");
+    if (lastUserIndex === -1) return;
+
+    const prompt = messages[lastUserIndex].content;
+    const history = messages.slice(0, lastUserIndex);
+    const stale = messages.slice(lastUserIndex + 1);
+
+    setMessages((prev) => prev.slice(0, lastUserIndex + 1));
+    if (conversationIdRef.current) {
+      for (const message of stale) {
+        persist(() => deleteMessage(message.id));
+      }
+    }
+    await runAssistantTurn(prompt, history);
+  };
+
   const changeSelection = (next: ProviderSelection) => {
     const previous = selection;
     setSelection(next);
@@ -456,6 +504,7 @@ export function ChatView({
     selection.accountId
   );
 
+  const providerName = getEntry(catalog, selection.providerSlug).meta.name;
   const composerArea = manualState ? (
     <ManualHandoff
       providerName={manualState.providerName}
@@ -463,11 +512,10 @@ export function ChatView({
       onSave={completeManual}
       onCancel={cancelManual}
     />
+  ) : activeAccount ? (
+    <Composer onSend={send} onStop={stop} streaming={streaming} />
   ) : (
-    <>
-      <Composer onSend={send} onStop={stop} streaming={streaming} />
-      {!activeAccount && <MockNotice />}
-    </>
+    <NoAccountNotice providerName={providerName} />
   );
 
   return (
@@ -513,7 +561,7 @@ export function ChatView({
         ) : (
           <>
             <div className="min-h-0 flex-1 overflow-y-auto">
-              <MessageList messages={messages} />
+              <MessageList messages={messages} onRetry={retryLast} />
             </div>
             <div className="mx-auto w-full max-w-3xl px-4 pb-3">
               {composerArea}
@@ -549,7 +597,7 @@ function EmptyState() {
             )}
           >
             {provider.name}
-            {provider.phase === "phase2" && " · Phase 2"}
+            {provider.phase === "phase2" && " · soon"}
           </span>
         ))}
       </div>
@@ -557,11 +605,26 @@ function EmptyState() {
   );
 }
 
-function MockNotice() {
+/** Shown instead of the composer when the active provider has no connected
+ * account. Sending is blocked rather than answered with simulated text. */
+function NoAccountNotice({ providerName }: Readonly<{ providerName: string }>) {
   return (
-    <p className="pt-2 text-center text-xs text-muted-foreground">
-      No account selected — replies are simulated (mock). Connect a provider
-      account in Settings → AI providers for real replies.
-    </p>
+    <div className="rounded-2xl border border-dashed bg-card p-4 text-center">
+      <p className="text-sm font-medium">Connect a {providerName} account</p>
+      <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+        Choose manual mode to paste prompts and replies yourself, or add your own
+        API key for automatic replies. Your key stays in this browser.
+      </p>
+      <Link
+        href="/settings"
+        className={cn(
+          buttonVariants({ variant: "default", size: "sm" }),
+          "mt-3 gap-1.5"
+        )}
+      >
+        <Settings2 className="size-4" />
+        Open Settings
+      </Link>
+    </div>
   );
 }

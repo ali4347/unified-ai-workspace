@@ -158,6 +158,16 @@ export async function saveMessage(input: {
   return {};
 }
 
+/** Removes one of the user's own messages (RLS restricts this to the owner).
+ * Used when retrying a failed turn so the stale reply does not linger. */
+export async function deleteMessage(
+  messageId: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("messages").delete().eq("id", messageId);
+  return error ? { error: error.message } : {};
+}
+
 export async function updateConversationSelection(
   conversationId: string,
   selection: ProviderSelection
