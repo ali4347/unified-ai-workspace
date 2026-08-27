@@ -1,10 +1,17 @@
 # Security tests
 
-`rls_checks.sql` verifies the access-control guarantees the product promises: PRD §32 (RLS on every user-owned table), §33 (storage ownership), and §55/§59 ("unauthorized cross-user access tests fail"). It is the evidence behind the RLS line in the [release checklist](../../docs/SECURITY.md).
+Two harnesses verify the access-control guarantees the product promises (PRD §32 RLS, §33 storage ownership, §55/§59 "unauthorized cross-user access tests fail"). They are the evidence behind the RLS line in the [release checklist](../../docs/SECURITY.md):
 
-Run it after every migration push and before any release.
+| Harness | Surface | Mechanism |
+| --- | --- | --- |
+| `rls_checks.sql` | **Database RLS** — every user-owned table + reference tables | SQL impersonation (`request.jwt.claims` + `SET LOCAL ROLE authenticated`), transactional, self-rolling-back |
+| `storage_rls_check.ts` | **Storage authorization** — the private `attachments` bucket | The real Storage API with real user JWTs |
 
-## What a green run proves
+**Why the split:** Supabase protects storage tables from direct SQL mutation (`Direct deletion from storage tables is not allowed. Use the Storage API instead.`) because Storage metadata and the underlying object store must stay synchronized. Storage schema metadata is therefore treated as **read-only from SQL**, and direct `storage.objects` mutation is intentionally not tested by the SQL suite — it is not a path any real client can take. The SQL suite keeps one read-only check that the four attachments ownership policies exist; everything behavioral goes through the Storage API harness.
+
+Run both after every migration push and before any release.
+
+## What a green SQL run proves
 
 The suite prints `RLS checks passed: N/N`. That line only appears if **every** assertion below passed — there is no partial-pass path, and any failure aborts with a `FAIL <table>/<action>: …` message naming the exact policy surface that broke.
 
@@ -20,10 +27,10 @@ The suite prints `RLS checks passed: N/N`. That line only appears if **every** a
 | `provider_sessions` | full matrix **plus** both ownership chains: a session may not reference another user's connected account or extension device, on INSERT or UPDATE, with a positive control that a fully-owned chain still works |
 | `provider_events` | isolation matrix (read/delete own ✔, read/update/delete other ✘, insert-as-other ✘, update own ✘ *(append-only by design)*) **plus** both INSERT chains: `account_id` and `conversation_id` must be NULL or owned — own ✔, NULL ✔, B's account ✘, B's conversation ✘. *(This table had no coverage at all before 2026-08-27.)* |
 | `providers`, `models` | readable by any authenticated user ✔; insert/update/delete ✘; every model carries an `api_model` mapping |
-| `storage.objects` (`attachments` bucket) | read own ✔ / read other ✘ / update own ✔ / update other ✘ / delete own ✔ / delete other ✘ / upload into own path ✔ / upload into another user's path ✘ |
+| storage policies (read-only) | the four `attachments_storage_*_own` policies exist on `storage.objects` as migrated — the behavioral matrix lives in `storage_rls_check.ts` |
 | Symmetry | the core isolation checks are repeated as user B, so a green run cannot come from user A simply owning no data |
 | Harness canary | asserts user A sees exactly one profile — if RLS were bypassed (running as owner, missing `FORCE ROW LEVEL SECURITY`), the whole suite would otherwise be a false green |
-| Cleanup | no fixture row survived, no test storage object survived, `auth.users` unchanged, every table back to its pre-test count |
+| Cleanup | no fixture row survived, `auth.users` unchanged, every table back to its pre-test count (the SQL suite writes no storage objects; the Storage harness cleans its own through the API) |
 
 ### Intended asymmetries
 
@@ -55,7 +62,7 @@ set local role authenticated;
 
 Everything runs inside one transaction that ends in `ROLLBACK`, so borrowing production identities leaves their data untouched. PART 2 proves this by re-comparing every table count against a baseline captured before the transaction opened.
 
-## How to run
+## How to run the SQL suite
 
 The file is plain SQL and needs a session that can `SET ROLE authenticated` (i.e. connect as `postgres`/owner). It is **not** a migration — never put it in `supabase/migrations/`.
 
@@ -88,6 +95,33 @@ Two caveats:
 
 - Read the **Notices** pane, not just the results grid. The pass line (`RLS checks passed: N/N`), the cleanup confirmation and the `FINDING …` probe are all `RAISE NOTICE` output.
 - Run the file whole. Executing only a highlighted fragment can leave the `begin;` open or skip the `rollback;`.
+
+## Storage authorization harness (`storage_rls_check.ts`)
+
+A manual E2E check that exercises the **real Storage API** against the private `attachments` bucket with **real user JWTs** — never the service-role key, so RLS is genuinely evaluated. It verifies, with two distinct users:
+
+- **Own path:** A can upload, download, replace (content verified) and delete (verified gone) under `{their-uid}/…`.
+- **Cross-user:** A cannot download, replace, or delete B's object, and cannot upload into B's ownership path. Every denial is re-verified from B's side — the Storage API can report "success with nothing done" when RLS filters silently (e.g. `remove()` of an invisible object), so error objects alone are never trusted.
+
+Safeguards: every object lives under a unique per-run prefix `{uid}/rls-e2e/{runId}/` (no production path is ever reused); cleanup runs in `finally` through the Storage API, each user removing their own prefix; the cleanup result is reported separately from the PASS/FAIL verdict; leftover objects are named explicitly if cleanup fails.
+
+### Running it
+
+```bash
+# from the repo root
+npx -y tsx supabase/tests/storage_rls_check.ts
+```
+
+Project URL and anon key are read from `UAW_SUPABASE_URL` / `UAW_SUPABASE_ANON_KEY`, falling back to the `NEXT_PUBLIC_*` values in `apps/web/.env.local` (both are public values).
+
+### Providing the two authenticated sessions (credentials never touch git)
+
+The harness refuses to run without credentials and prints these options. Supply them via **environment variables only** — never files, never commits:
+
+1. **Two throwaway email+password users** (recommended): Dashboard → Authentication → Add user, twice; export `UAW_TEST_EMAIL_A`/`UAW_TEST_PASSWORD_A` and `UAW_TEST_EMAIL_B`/`UAW_TEST_PASSWORD_B`; delete both users when done. Don't reuse real accounts' passwords.
+2. **Two pre-minted access tokens** from signed-in sessions: export `UAW_TEST_JWT_A`/`UAW_TEST_JWT_B`. User JWTs are short-lived; mint them just before running.
+
+The script aborts if both identities resolve to the same account, and never prints or persists any credential. The service-role key is not accepted anywhere in this harness.
 
 ## Findings
 

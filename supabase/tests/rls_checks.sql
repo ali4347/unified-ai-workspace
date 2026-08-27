@@ -1,13 +1,23 @@
 -- ===========================================================================
--- RLS + storage isolation verification suite
--- PRD §32 (RLS), §55 / §59 ("unauthorized cross-user access tests fail"), §33
--- (storage ownership). See supabase/tests/README.md for how to run this.
+-- Database RLS verification suite (SQL impersonation)
+-- PRD §32 (RLS), §55 / §59 ("unauthorized cross-user access tests fail").
+-- See supabase/tests/README.md for how to run this.
+--
+-- STORAGE IS OUT OF SCOPE FOR SQL — READ-ONLY HERE. Supabase protects storage
+-- tables from direct DML ("Direct deletion from storage tables is not allowed.
+-- Use the Storage API instead."): Storage metadata and the physical object
+-- store must stay synchronized, so SQL writes to storage.objects are both
+-- forbidden and unrepresentative of real client behaviour. This suite only
+-- verifies (read-only) that the attachments ownership POLICIES exist as
+-- migrated (§13); the behavioral authorization matrix runs through the real
+-- Storage API with real user JWTs in supabase/tests/storage_rls_check.ts.
 -- ===========================================================================
 --
 -- SAFETY MODEL
 --
 --   * The whole suite runs inside ONE transaction that always ends in ROLLBACK.
---     No fixture row, storage object or policy change survives it.
+--     No fixture row or policy change survives it. storage.objects is never
+--     written (see above) — the only storage access is a catalog read.
 --   * It NEVER inserts into auth.users. Every user-owned table has
 --     `user_id uuid references auth.users(id)`, so synthetic uuids would fail the
 --     foreign key, and hand-writing GoTrue-managed rows is unsafe on hosted
@@ -80,8 +90,7 @@ select
   (select count(*) from public.extension_devices)                          as extension_devices,
   (select count(*) from public.provider_events)                            as provider_events,
   (select count(*) from public.providers)                                  as providers,
-  (select count(*) from public.models)                                     as models,
-  (select count(*) from storage.objects where bucket_id = 'attachments')   as storage_objects;
+  (select count(*) from public.models)                                     as models;
 
 -- The harness canary (§2) reads this table AFTER `set local role authenticated`,
 -- and the owner-created temp table carries no grant for that role. Grant read
@@ -224,11 +233,9 @@ begin
     ('de77de77-0000-4000-8000-000000000a28', a, claude_provider, null, 'model_changed'),
     ('de77de77-0000-4000-8000-000000000b08', b, claude_provider, null, 'connected');
 
-  -- storage objects under {user_id}/… (the ownership convention the policies enforce)
-  insert into storage.objects (id, bucket_id, name)
-  values
-    ('de77de77-0000-4000-8000-0000000000f1', 'attachments', a::text || '/rls-check/a.txt'),
-    ('de77de77-0000-4000-8000-0000000000f2', 'attachments', b::text || '/rls-check/b.txt');
+  -- NO storage.objects fixtures: Supabase forbids direct DML on storage
+  -- tables (metadata ↔ object-store sync). Storage authorization is tested
+  -- through the Storage API in supabase/tests/storage_rls_check.ts.
 exception
   when others then
     raise exception
@@ -1012,57 +1019,32 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
--- §13 storage.objects — private `attachments` bucket, {user_id}/… ownership
+-- §13 storage — READ-ONLY policy-existence check.
+--     Supabase forbids direct DML on storage tables ("Direct deletion from
+--     storage tables is not allowed. Use the Storage API instead."), so the
+--     behavioral matrix (upload/read/replace/delete, own vs cross-user) runs
+--     through the REAL Storage API with real user JWTs in
+--     supabase/tests/storage_rls_check.ts. Here we only verify the four
+--     attachments ownership policies exist as migrated (catalog read).
 -- ---------------------------------------------------------------------------
 
 do $$
 declare
-  a uuid := current_setting('test.uid_a')::uuid;
-  b uuid := current_setting('test.uid_b')::uuid;
   n integer;
-  blocked boolean := false;
 begin
-  select count(*) into n from storage.objects
-   where bucket_id = 'attachments' and name = a::text || '/rls-check/a.txt';
-  perform pg_temp.ok(n = 1, 'storage/select-own: A cannot read their own object in the attachments bucket');
-
-  select count(*) into n from storage.objects
-   where bucket_id = 'attachments' and name = b::text || '/rls-check/b.txt';
-  perform pg_temp.ok(n = 0, 'storage/select-other: A can READ B''s object in the attachments bucket');
-
-  update storage.objects set metadata = '{"tampered":true}'::jsonb
-   where bucket_id = 'attachments' and name = b::text || '/rls-check/b.txt';
-  get diagnostics n = row_count;
-  perform pg_temp.ok(n = 0, 'storage/update-other: A can UPDATE B''s stored object');
-
-  delete from storage.objects
-   where bucket_id = 'attachments' and name = b::text || '/rls-check/b.txt';
-  get diagnostics n = row_count;
-  perform pg_temp.ok(n = 0, 'storage/delete-other: A can DELETE B''s stored object');
-
-  -- upload into B's ownership path
-  begin
-    insert into storage.objects (bucket_id, name)
-    values ('attachments', b::text || '/rls-check/planted.txt');
-  exception when insufficient_privilege then blocked := true;
-  end;
-  perform pg_temp.ok(blocked, 'storage/insert-other-path: A can UPLOAD into B''s ownership path');
-
-  -- own path round-trip
-  insert into storage.objects (bucket_id, name)
-  values ('attachments', a::text || '/rls-check/own-upload.txt');
-  get diagnostics n = row_count;
-  perform pg_temp.ok(n = 1, 'storage/insert-own-path: A cannot upload into their own ownership path');
-
-  update storage.objects set metadata = '{"ok":true}'::jsonb
-   where bucket_id = 'attachments' and name = a::text || '/rls-check/own-upload.txt';
-  get diagnostics n = row_count;
-  perform pg_temp.ok(n = 1, 'storage/update-own: A cannot update their own stored object');
-
-  delete from storage.objects
-   where bucket_id = 'attachments' and name = a::text || '/rls-check/own-upload.txt';
-  get diagnostics n = row_count;
-  perform pg_temp.ok(n = 1, 'storage/delete-own: A cannot delete their own stored object');
+  select count(*) into n
+    from pg_policies
+   where schemaname = 'storage'
+     and tablename = 'objects'
+     and policyname in (
+       'attachments_storage_select_own',
+       'attachments_storage_insert_own',
+       'attachments_storage_update_own',
+       'attachments_storage_delete_own'
+     );
+  perform pg_temp.ok(n = 4,
+    'storage-policies/exist: expected the 4 attachments-bucket ownership policies on storage.objects, found ' || n ||
+    ' — behavioral checks live in storage_rls_check.ts and mean nothing if the policies are missing');
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -1087,11 +1069,8 @@ begin
 
   select count(*) into n from public.conversations where id = 'de77de77-0000-4000-8000-000000000a02';
   perform pg_temp.ok(n = 0, 'symmetry/conversations: B can READ A''s conversation');
-
-  select count(*) into n from storage.objects
-   where bucket_id = 'attachments'
-     and name = current_setting('test.uid_a') || '/rls-check/a.txt';
-  perform pg_temp.ok(n = 0, 'symmetry/storage: B can READ A''s stored object');
+  -- (storage symmetry moved to storage_rls_check.ts — SQL never writes
+  -- storage fixtures, so there is nothing meaningful to read here.)
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -1139,12 +1118,9 @@ begin
     raise exception 'CLEANUP FAIL: % fixture row(s) survived the rollback', leaked;
   end if;
 
-  -- 2b. No test storage object survived.
-  select count(*) into leaked from storage.objects
-   where bucket_id = 'attachments' and name like '%/rls-check/%';
-  if leaked <> 0 then
-    raise exception 'CLEANUP FAIL: % test storage object(s) survived the rollback', leaked;
-  end if;
+  -- (2b removed: the suite never writes storage.objects, so there is no
+  --  storage cleanup to verify — the Storage API harness cleans up its own
+  --  objects through the API.)
 
   -- 2c. No test identity was created — auth.users must be unchanged.
   if (select count(*) from auth.users) <> b.auth_users then
@@ -1164,12 +1140,11 @@ begin
   or (select count(*) from public.provider_events)    <> b.provider_events
   or (select count(*) from public.providers)          <> b.providers
   or (select count(*) from public.models)             <> b.models
-  or (select count(*) from storage.objects where bucket_id = 'attachments') <> b.storage_objects
   then
     raise exception 'CLEANUP FAIL: at least one table count differs from the pre-test baseline';
   end if;
 
-  raise notice 'Cleanup verified: no fixture rows, no test storage objects, auth.users unchanged, all table counts match the pre-test baseline.';
+  raise notice 'Cleanup verified: no fixture rows, auth.users unchanged, all table counts match the pre-test baseline.';
 end $$;
 
 
