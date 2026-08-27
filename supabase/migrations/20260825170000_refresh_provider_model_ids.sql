@@ -3,11 +3,14 @@
 -- Verified against official documentation on 2026-08-27:
 --
 --   Anthropic — platform.claude.com/docs/en/about-claude/models/overview
---     claude-opus-5      Claude Opus 5      (already mapped, still current)
---     claude-sonnet-5    Claude Sonnet 5    (already mapped, still current)
---     claude-haiku-4-5   Claude Haiku 4.5   (alias of claude-haiku-4-5-20251001;
---                                            retirement not sooner than 2026-10-15)
---     claude-fable-5     Claude Fable 5     (highest capability — added here)
+--     claude-opus-5               Claude Opus 5     (already mapped, still current)
+--     claude-sonnet-5             Claude Sonnet 5   (already mapped, still current)
+--     claude-haiku-4-5-20251001   Claude Haiku 4.5  — the documented "Claude API ID"
+--         and the canonical value persisted here. `claude-haiku-4-5` is the documented
+--         convenience alias that resolves to this snapshot; it is recorded as
+--         capabilities.api_model_alias for display/compatibility only and must never
+--         be the persisted canonical id. Retirement not sooner than 2026-10-15.
+--     claude-fable-5              Claude Fable 5    (highest capability — added here)
 --
 --   OpenAI — developers.openai.com/api/docs/models (+ /deprecations)
 --     gpt-5.6-sol        frontier   (alias gpt-5.6)  — /v1/chat/completions supported
@@ -27,8 +30,10 @@
 -- only the provider-side api_model they resolve to changed.
 
 -- ---------------------------------------------------------------------------
--- 1. Archive the outgoing OpenAI ids before overwriting them.
---    The WHERE clause only matches while the retired ids are still in place, so a
+-- 1. Archive the outgoing api_model values before overwriting them:
+--      - the retired OpenAI GPT-5.1 ids, and
+--      - the unpinned Claude Haiku alias, if 20260825140000 already ran here.
+--    The WHERE clause only matches while those values are still in place, so a
 --    second run appends nothing.
 -- ---------------------------------------------------------------------------
 update public.models m
@@ -39,8 +44,10 @@ set capabilities = m.capabilities || jsonb_build_object(
 )
 from public.providers p
 where m.provider_id = p.id
-  and p.slug = 'chatgpt'
-  and m.capabilities ->> 'api_model' in ('gpt-5.1', 'gpt-5.1-mini');
+  and (
+    (p.slug = 'chatgpt' and m.capabilities ->> 'api_model' in ('gpt-5.1', 'gpt-5.1-mini'))
+    or (p.slug = 'claude' and m.capabilities ->> 'api_model' = 'claude-haiku-4-5')
+  );
 
 -- ---------------------------------------------------------------------------
 -- 2. New catalog entries (additive; existing rows are left alone).
@@ -79,7 +86,7 @@ from (
   values
     ('claude', 'claude-sonnet', 'claude-sonnet-5'),
     ('claude', 'claude-opus', 'claude-opus-5'),
-    ('claude', 'claude-haiku', 'claude-haiku-4-5'),
+    ('claude', 'claude-haiku', 'claude-haiku-4-5-20251001'),
     ('claude', 'claude-fable', 'claude-fable-5'),
     ('chatgpt', 'chatgpt-flagship', 'gpt-5.6-sol'),
     ('chatgpt', 'chatgpt-balanced', 'gpt-5.6-terra'),
@@ -98,5 +105,20 @@ from (
     ('claude', 'claude-opus', 'Complex agentic work'),
     ('chatgpt', 'chatgpt-flagship', 'Frontier')
 ) as v (provider_slug, external_id, display_name)
+join public.providers p on p.slug = v.provider_slug
+where m.provider_id = p.id and m.external_id = v.external_id;
+
+-- ---------------------------------------------------------------------------
+-- 5. Documented convenience aliases. These are display/compatibility values
+--    only — the canonical id sent to the provider is always api_model above.
+--    Anything reading capabilities must prefer api_model and treat api_model_alias
+--    as a legacy equivalent, never the other way round.
+-- ---------------------------------------------------------------------------
+update public.models m
+set capabilities = m.capabilities || jsonb_build_object('api_model_alias', v.alias)
+from (
+  values
+    ('claude', 'claude-haiku', 'claude-haiku-4-5')
+) as v (provider_slug, external_id, alias)
 join public.providers p on p.slug = v.provider_slug
 where m.provider_id = p.id and m.external_id = v.external_id;

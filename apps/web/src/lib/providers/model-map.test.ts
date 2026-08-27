@@ -4,8 +4,10 @@ import { describe, expect, it } from "vitest";
 import type { ProviderSlug } from "@uaw/types";
 import {
   API_MODELS_VERIFIED_ON,
+  API_MODEL_ALIASES,
   FALLBACK_API_MODELS,
   RETIRED_API_MODELS,
+  canonicalApiModel,
   fallbackApiModel,
 } from "@/lib/providers/model-map";
 import { FALLBACK_CATALOG, getEntry } from "@/lib/providers/catalog";
@@ -81,6 +83,37 @@ describe("retired ids", () => {
     expect(RETIRED_API_MODELS).toContain("gpt-5.1-mini");
     expect(fallbackApiModel("chatgpt", "chatgpt-flagship")).toBe("gpt-5.6-sol");
     expect(fallbackApiModel("chatgpt", "chatgpt-mini")).toBe("gpt-5.6-luna");
+  });
+});
+
+describe("canonical ids vs aliases", () => {
+  const PINNED_HAIKU = "claude-haiku-4-5-20251001";
+
+  it("persists the pinned Haiku snapshot, never the alias", () => {
+    expect(FALLBACK_API_MODELS.claude?.["claude-haiku"]).toBe(PINNED_HAIKU);
+    expect(fallbackApiModel("claude", "claude-haiku")).toBe(PINNED_HAIKU);
+
+    // The alias must not appear as a canonical mapping for any provider.
+    const canonical = Object.values(FALLBACK_API_MODELS).flatMap((models) =>
+      Object.values(models ?? {})
+    );
+    expect(canonical).not.toContain("claude-haiku-4-5");
+  });
+
+  it("keeps the alias only as an input/display fallback", () => {
+    expect(API_MODEL_ALIASES["claude-haiku-4-5"]).toBe(PINNED_HAIKU);
+    expect(canonicalApiModel("claude-haiku-4-5")).toBe(PINNED_HAIKU);
+    // Already-canonical and unknown values pass through untouched.
+    expect(canonicalApiModel(PINNED_HAIKU)).toBe(PINNED_HAIKU);
+    expect(canonicalApiModel("gpt-5.6-sol")).toBe("gpt-5.6-sol");
+  });
+
+  it("records the alias in the migration as api_model_alias, not api_model", () => {
+    const sql = readFileSync(MIGRATION, "utf8");
+    const mapping = migrationMapping();
+    expect(mapping.claude["claude-haiku"]).toBe(PINNED_HAIKU);
+    expect(sql).toContain("'api_model_alias', v.alias");
+    expect(sql).toContain("('claude', 'claude-haiku', 'claude-haiku-4-5')");
   });
 });
 

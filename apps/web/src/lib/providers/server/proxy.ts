@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { ProviderErrorCode, ProviderSlug } from "@uaw/types";
+import { canonicalApiModel } from "@/lib/providers/model-map";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -39,7 +40,10 @@ export async function requirePortalUser(): Promise<string | null> {
 }
 
 /** Resolves a catalog model id to the provider's real API model id via
- * models.capabilities.api_model (seeded by migration). */
+ * models.capabilities.api_model (seeded by migration). The result is
+ * normalized through canonicalApiModel, so a row still carrying a documented
+ * alias (e.g. a database seeded before the 2026-08-27 refresh migration)
+ * resolves to the pinned snapshot rather than the alias. */
 export async function resolveApiModel(
   providerSlug: ProviderSlug,
   externalId: string
@@ -65,7 +69,9 @@ export async function resolveApiModel(
     !Array.isArray(capabilities)
   ) {
     const apiModel = (capabilities as { api_model?: unknown }).api_model;
-    if (typeof apiModel === "string" && apiModel.length > 0) return apiModel;
+    if (typeof apiModel === "string" && apiModel.length > 0) {
+      return canonicalApiModel(apiModel);
+    }
   }
   return null;
 }

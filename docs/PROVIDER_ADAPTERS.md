@@ -65,19 +65,21 @@ Implementation notes: client half = `HttpStreamAdapter` (provider-core, generic)
 
 Catalog model ids (`chatgpt-flagship`, `claude-sonnet`, …) are stable app-level keys. The provider-side id they resolve to lives in `models.capabilities.api_model`, with the same table mirrored in `apps/web/src/lib/providers/model-map.ts` as a pre-migration fallback. `model-map.test.ts` fails the build if the two drift apart or if a retired id reappears.
 
+**Canonical ids are pinned snapshots.** Where a provider documents both a snapshot id and a convenience alias, the snapshot is what we persist and send — an alias can be repointed at a new model underneath us, which would silently change behaviour and cost. Aliases are recorded separately (`capabilities.api_model_alias`, `API_MODEL_ALIASES`) and are accepted on input for compatibility: `canonicalApiModel()` normalizes any alias found in a database row to the pinned id before the request goes out.
+
 **Last verified against official documentation: 2026-08-27.**
 
-| Catalog id | API model id | Source |
-| --- | --- | --- |
-| `claude-sonnet` | `claude-sonnet-5` | [Claude models overview](https://platform.claude.com/docs/en/about-claude/models/overview) |
-| `claude-opus` | `claude-opus-5` | same |
-| `claude-fable` | `claude-fable-5` | same |
-| `claude-haiku` | `claude-haiku-4-5` | same (alias of the pinned `claude-haiku-4-5-20251001`) |
-| `chatgpt-flagship` | `gpt-5.6-sol` | [OpenAI models](https://developers.openai.com/api/docs/models) (alias `gpt-5.6`) |
-| `chatgpt-balanced` | `gpt-5.6-terra` | same |
-| `chatgpt-mini` | `gpt-5.6-luna` | same |
+| Catalog id | Canonical API model id | Alias (not persisted) | Source |
+| --- | --- | --- | --- |
+| `claude-sonnet` | `claude-sonnet-5` | — | [Claude models overview](https://platform.claude.com/docs/en/about-claude/models/overview) |
+| `claude-opus` | `claude-opus-5` | — | same |
+| `claude-fable` | `claude-fable-5` | — | same |
+| `claude-haiku` | `claude-haiku-4-5-20251001` | `claude-haiku-4-5` | same |
+| `chatgpt-flagship` | `gpt-5.6-sol` | `gpt-5.6` | [OpenAI models](https://developers.openai.com/api/docs/models) |
+| `chatgpt-balanced` | `gpt-5.6-terra` | — | same |
+| `chatgpt-mini` | `gpt-5.6-luna` | — | same |
 
-Every OpenAI id above lists `/v1/chat/completions` as supported, which is the endpoint our proxy uses; that endpoint is not deprecated (verified 2026-08-27).
+The Claude ids above are the documented "Claude API ID" column; the dateless Claude 5-generation ids (`claude-opus-5`, `claude-sonnet-5`, `claude-fable-5`) are themselves pinned snapshots, so only Haiku 4.5 carries a separate dated form. Every OpenAI id lists `/v1/chat/completions` as supported, which is the endpoint our proxy uses; that endpoint is not deprecated (verified 2026-08-27).
 
 ### Re-audit triggers
 

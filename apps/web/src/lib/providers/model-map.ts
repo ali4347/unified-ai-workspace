@@ -24,9 +24,11 @@ export const FALLBACK_API_MODELS: Readonly<
   claude: {
     "claude-sonnet": "claude-sonnet-5",
     "claude-opus": "claude-opus-5",
-    // Alias of the pinned snapshot claude-haiku-4-5-20251001.
+    // Pinned snapshot — the documented "Claude API ID". The shorter
+    // `claude-haiku-4-5` is only a convenience alias (see API_MODEL_ALIASES) and
+    // is never the canonical persisted value.
     // Retirement commitment: not sooner than 2026-10-15 — re-audit before then.
-    "claude-haiku": "claude-haiku-4-5",
+    "claude-haiku": "claude-haiku-4-5-20251001",
     "claude-fable": "claude-fable-5",
   },
   chatgpt: {
@@ -37,6 +39,24 @@ export const FALLBACK_API_MODELS: Readonly<
     "chatgpt-mini": "gpt-5.6-luna",
   },
 };
+
+/**
+ * Documented convenience aliases → the canonical pinned id they resolve to.
+ *
+ * Aliases are accepted on input (a database row seeded before the 2026-08-27
+ * refresh migration still carries `claude-haiku-4-5`) and used for display, but
+ * they are never persisted or sent as the canonical model id: pinning keeps the
+ * request deterministic when an alias is later repointed at a new snapshot.
+ */
+export const API_MODEL_ALIASES: Readonly<Record<string, string>> = {
+  "claude-haiku-4-5": "claude-haiku-4-5-20251001",
+};
+
+/** Normalizes any documented alias to its canonical pinned id. Unknown values
+ * pass through unchanged — the provider is the final authority on validity. */
+export function canonicalApiModel(apiModel: string): string {
+  return API_MODEL_ALIASES[apiModel] ?? apiModel;
+}
 
 /** Provider API model ids retired upstream — must never be sent again.
  * Kept so tests can assert no code path reintroduces them. */
@@ -49,11 +69,13 @@ export const RETIRED_API_MODELS: readonly string[] = [
   "gpt-5-chat-latest",
 ];
 
-/** Fallback lookup for a provider's catalog model id. Returns null when the id
- * is unknown, which callers turn into MODEL_UNAVAILABLE. */
+/** Fallback lookup for a provider's catalog model id, already canonical.
+ * Returns null when the id is unknown, which callers turn into
+ * MODEL_UNAVAILABLE. */
 export function fallbackApiModel(
   provider: ProviderSlug,
   externalId: string
 ): string | null {
-  return FALLBACK_API_MODELS[provider]?.[externalId] ?? null;
+  const apiModel = FALLBACK_API_MODELS[provider]?.[externalId];
+  return apiModel ? canonicalApiModel(apiModel) : null;
 }
