@@ -52,15 +52,15 @@ Implemented posture (`apps/extension`):
 - Portal ↔ extension messaging uses `window.postMessage` with origin and envelope validation on both ends; no credentials ever cross this channel.
 - The extension is not permission to bypass provider restrictions (PRD §27).
 
-## Release checklist (PRD §59) — reviewed at M9 (2026-08-25)
+## Release checklist (PRD §59) — last reviewed 2026-08-27 (release audit)
 
 - [x] No external AI passwords stored — no password fields anywhere; API keys (optional, user-supplied) live in the user's browser only
 - [x] RLS enabled on all user tables — see Database section; verified by `supabase/tests/rls_checks.sql`
-- [x] Storage ownership policies enabled — `attachments` bucket, first path segment = `auth.uid()`
+- [x] Storage ownership policies enabled — `attachments` bucket, first path segment = `auth.uid()`; verified behaviourally end-to-end through the Storage API with two real user JWTs (`storage_rls_check.ts` → 9/9)
 - [x] No sensitive tokens in logs — proxy routes never log keys or prompt content; client logs carry error digests only
 - [x] Browser messaging validates origin — extension service worker + portal bridge validate sender id, origin allowlist and envelope shape on both ends
 - [x] Extension permissions minimized — zero `permissions`/`host_permissions`; allowlisted content scripts only
-- [x] Cross-user access tests fail — `rls_checks.sql` (run against the hosted DB after each migration push)
+- [x] Cross-user access tests fail — verified against hosted 2026-08-27: `rls_checks.sql` → `RLS_CHECKS_PASSED | 110 | 110`, `rls_cleanup_check.sql` → `CLEANUP_VERIFIED`, `storage_rls_check.ts` → 9/9
 - [x] No provider restriction is bypassed — no consumer-site automation exists; `manual` + `official_api` modes only; extension answers automation messages with `UNSUPPORTED_ACTION`
 
-Remaining operational step: run `rls_checks.sql` against the hosted project whenever migrations are pushed (M10 deployment step).
+**Recurring requirement:** after every migration push to a hosted project, re-run all three harnesses in order — `rls_checks.sql`, then `rls_cleanup_check.sql`, then `storage_rls_check.ts`. Last run 2026-08-27 against production: 110/110, CLEANUP_VERIFIED, 9/9.

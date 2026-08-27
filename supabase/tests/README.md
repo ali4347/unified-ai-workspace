@@ -1,6 +1,6 @@
 # Security tests
 
-Two harnesses verify the access-control guarantees the product promises (PRD §32 RLS, §33 storage ownership, §55/§59 "unauthorized cross-user access tests fail"). They are the evidence behind the RLS line in the [release checklist](../../docs/SECURITY.md):
+Three harnesses verify the access-control guarantees the product promises (PRD §32 RLS, §33 storage ownership, §55/§59 "unauthorized cross-user access tests fail"). They are the evidence behind the RLS line in the [release checklist](../../docs/SECURITY.md):
 
 | Harness | Surface | Mechanism |
 | --- | --- | --- |
@@ -12,7 +12,9 @@ Two harnesses verify the access-control guarantees the product promises (PRD §3
 
 **Why the split:** Supabase protects storage tables from direct SQL mutation (`Direct deletion from storage tables is not allowed. Use the Storage API instead.`) because Storage metadata and the underlying object store must stay synchronized. Storage schema metadata is therefore treated as **read-only from SQL**, and direct `storage.objects` mutation is intentionally not tested by the SQL suite — it is not a path any real client can take. The SQL suite keeps one read-only check that the four attachments ownership policies exist; everything behavioral goes through the Storage API harness.
 
-Run both after every migration push and before any release.
+Run all three, in order (suite → cleanup check → storage harness), after every migration push and before any release.
+
+**Last verified against production (2026-08-27):** `RLS_CHECKS_PASSED | 110 | 110` · `CLEANUP_VERIFIED` · `Storage authorization checks passed: 9/9`.
 
 ## What a green SQL run proves
 
@@ -90,7 +92,7 @@ psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/rls_cleanup_check.s
 
 `ON_ERROR_STOP=1` matters: without it psql keeps going after a failed assertion and the exit code lies.
 
-> The transaction pooler (port 6543) is **not** supported: it may hand statements to different backends, which breaks `SET LOCAL ROLE` and the temp baseline table.
+> The transaction pooler (port 6543) is **not** supported: it may hand statements to different backends, which breaks `SET LOCAL ROLE` and the `pg_temp` helper functions.
 
 ### Hosted Supabase SQL Editor — the standard flow
 

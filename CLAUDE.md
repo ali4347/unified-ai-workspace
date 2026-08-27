@@ -11,7 +11,7 @@ pnpm dev          # run web app (apps/web) on :3000
 pnpm build        # production build (web)
 pnpm typecheck    # tsc --noEmit, all workspace packages
 pnpm lint         # eslint, all workspace packages
-pnpm test         # vitest unit tests (context handoff, catalog, proxy validation)
+pnpm test         # vitest (context handoff, catalog, model-id drift guard, proxy validation, message parsing)
 pnpm --filter @uaw/extension build   # MV3 companion → apps/extension/dist
 ```
 
@@ -21,6 +21,7 @@ pnpm --filter @uaw/extension build   # MV3 companion → apps/extension/dist
 - `apps/web/src/lib/supabase/` — `client.ts` (browser), `server.ts` (RSC/route handlers), `middleware.ts` (session refresh + route protection, invoked from `src/middleware.ts`).
 - `packages/types` — `@uaw/types`, shared provider/domain types. Consumed as TS source via `transpilePackages`.
 - `supabase/migrations` — SQL with RLS. Schema changes go through migrations only (rule 9), never silent architecture changes (rule 15).
+- `supabase/tests` — security harnesses. After any migration push, run `rls_checks.sql` (expect `RLS_CHECKS_PASSED | 110 | 110`), then `rls_cleanup_check.sql` (`CLEANUP_VERIFIED`), then `storage_rls_check.ts` (9/9). See `supabase/tests/README.md`.
 - `docs/` — PRD, architecture, security, provider-adapter and milestone docs. Update docs when architecture changes (rule 20).
 
 ## Hard rules (from PRD §61)

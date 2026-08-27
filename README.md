@@ -14,6 +14,16 @@ Milestones 1–10 are implemented — foundation, core UI, database + RLS, provi
 
 Production: https://unified-ai-workspace-web.vercel.app
 
+**Verified release state (2026-08-27)**
+
+| Check | Result |
+| --- | --- |
+| Hosted migrations | all 10 applied, 0 pending |
+| Database RLS suite | `RLS_CHECKS_PASSED` — 110 / 110 assertions |
+| Rollback / cleanup proof | `CLEANUP_VERIFIED` |
+| Storage authorization (Storage API) | 9/9 |
+| Production browser flows | Google sign-in, conversation create/persist/reload, recents, Claude + ChatGPT manual connection and handoff, Claude → ChatGPT switching in one conversation |
+
 ## Stack
 
 | Layer | Technology |
@@ -36,7 +46,9 @@ unified-ai-workspace/
     provider-core/       @uaw/provider-core — adapter interface, registry, events, adapters
   supabase/
     migrations/          SQL migrations (schema, RLS, seeds, indexes)
-    tests/               rls_checks.sql — cross-user isolation checks
+    tests/               rls_checks.sql (110 database RLS assertions),
+                         rls_cleanup_check.sql (rollback proof),
+                         storage_rls_check.ts (Storage API, 9 assertions)
   docs/
     PRD.md               product requirements (source of truth)
     ARCHITECTURE.md      implemented architecture + decisions
@@ -62,7 +74,7 @@ pnpm install
 ### 3. Set up Supabase
 
 1. Create a project at [database.new](https://database.new).
-2. Apply **all** files in `supabase/migrations/` in filename order — either paste each into the **SQL Editor**, or with the Supabase CLI: `supabase link --project-ref <ref>` then `supabase db push`. Afterwards run `supabase/tests/rls_checks.sql` once (it rolls itself back) to verify RLS isolation.
+2. Apply **all** files in `supabase/migrations/` in filename order — either paste each into the **SQL Editor**, or with the Supabase CLI: `supabase link --project-ref <ref>` then `supabase db push`. Afterwards verify isolation: run `supabase/tests/rls_checks.sql` (it rolls itself back), then `supabase/tests/rls_cleanup_check.sql`, then `supabase/tests/storage_rls_check.ts` for storage authorization — see `supabase/tests/README.md`.
 3. **Authentication → URL Configuration**:
    - Site URL: `http://localhost:3000`
    - Redirect URLs: `http://localhost:3000/auth/callback`
@@ -103,7 +115,7 @@ Switching provider mid-conversation hands off context automatically (full histor
 ## Deployment
 
 - **Web** — Vercel, auto-deploys from `main`. Env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_APP_URL`.
-- **Database** — hosted Supabase; apply `supabase/migrations/` (SQL Editor or `supabase db push`) and re-run `supabase/tests/rls_checks.sql` after schema changes.
+- **Database** — hosted Supabase; apply `supabase/migrations/` (SQL Editor or `supabase db push`) and re-run all three harnesses in `supabase/tests/` after schema changes.
 - **Extension** — development build only: `pnpm --filter @uaw/extension build`, then load `apps/extension/dist` unpacked via chrome://extensions.
 
 ## Compliance position (important)

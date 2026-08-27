@@ -10,7 +10,7 @@ pnpm workspaces:
 apps/web                @uaw/web           — Next.js portal
 apps/extension          @uaw/extension     — MV3 companion (tab-presence detection only; esbuild dev build)
 packages/types          @uaw/types         — shared TypeScript types (TS source via transpilePackages)
-packages/provider-core  @uaw/provider-core — adapter interface, registry, events, errors, mock adapter
+packages/provider-core  @uaw/provider-core — adapter interface, registry, events, errors, HttpStreamAdapter, mock adapter
 supabase/               migrations + seed (applied to the hosted Supabase project)
 docs/                   product + engineering docs
 ```
@@ -47,17 +47,20 @@ src/app/
   (dashboard)/chat/           → new Master Conversation (?project= starts inside a project)
   (dashboard)/chat/[id]/      → stored conversation, reloaded from Supabase
   (dashboard)/projects/       → project CRUD (name, description, custom instructions)
-  (dashboard)/settings/       → account info + theme switcher
+  (dashboard)/settings/       → account, AI provider accounts, extension status, theme
 src/components/
   ui/                         → shadcn-style primitives (button, input, label, card, popover)
   layout/app-shell.tsx        → client shell: sidebar + mobile drawer + collapse
   sidebar/sidebar.tsx         → nav, live recents (rename/archive/delete), profile, signout
   sidebar/search-dialog.tsx   → global search (titles, message contents, project names)
   auth/                       → login form, setup notice
-  chat/                       → chat-view (state owner + persistence), composer, message-list
+  chat/                       → chat-view (state owner + persistence), composer, message-list,
+                                manual-handoff (manual mode panel), message-content (code rendering)
   providers/                  → ai-selector, account-selector, provider-badge, catalog-context
   projects/project-manager.tsx→ project list + forms
   settings/theme-toggle.tsx   → light/dark/system switcher
+  settings/provider-accounts.tsx → connect/disconnect provider accounts (manual | API key)
+  settings/extension-status.tsx  → companion extension connection status
 src/hooks/use-theme.ts        → theme preference ↔ localStorage("uaw-theme") + .dark class
 src/lib/
   env.ts                      → isSupabaseConfigured()
@@ -66,20 +69,21 @@ src/lib/
   chat/actions.ts             → server actions: conversation/message CRUD, selection, events, search
   chat/types.ts               → UiChatMessage (chat UI state shape)
   projects/actions.ts         → server actions: project CRUD
-  chat/context.ts             → provider context + manual handoff package (M8 adds strategies)
+  chat/context.ts             → context handoff engine: strategies A–D, rolling summary, manual package
   accounts/actions.ts         → server actions: connect/disconnect provider accounts (metadata only)
   extension/client.ts         → postMessage client for the companion extension
   providers/catalog.ts        → catalog built from DB rows (+ static fallback pre-migration)
-  providers/registry.ts       → registry with per-account routing: mock / official_api / manual
+  providers/registry.ts       → registry with per-account routing: manual / official_api (mock only without an account)
   providers/model-map.ts      → catalog id → provider API model id (verified; DB is runtime source)
   providers/key-store.ts      → browser-only localStorage for user API keys (never server-side)
   providers/server/proxy.ts   → shared proxy plumbing (auth, rate limit, validation, model map)
   providers/server/claude.ts  → server half of the Claude official_api adapter (Anthropic SDK)
-src/app/api/providers/claude  → POST proxy route (streaming; validate action)
   supabase/client.ts          → createBrowserClient<Database>
   supabase/server.ts          → createServerClient<Database> over next/headers cookies (async)
   supabase/middleware.ts      → updateSession(): session refresh + route protection
 src/middleware.ts             → invokes updateSession on all non-static routes
+src/app/api/providers/claude/   → POST proxy route (Anthropic SDK streaming; validate action)
+src/app/api/providers/chatgpt/  → POST proxy route (OpenAI SSE re-streamed; validate action)
 ```
 
 ## Auth flow
@@ -111,26 +115,34 @@ Login page
 | `force-dynamic` on auth-dependent segments | Nothing auth/env-related may be baked into the static build |
 | Missing env → setup notice, not crash | Developer/deployment ergonomics; PRD §62 |
 | `@uaw/types` consumed as TS source | No build step; `transpilePackages` in next.config |
-| No provider automation code anywhere yet | M4 uses mocks; M6 integration mode is gated on compliance review (see MILESTONES.md) |
-| Provider/model/account data from `lib/providers/catalog.ts` | PRD §15 — never hard-coded in UI components; moves to the database at M3 and behind the registry at M4 |
-| Chat state local to `ChatView` (React state, no Zustand yet) | PRD §46 — avoid unnecessary global state; persistence (M3) will reshape it anyway |
+| No provider automation code anywhere yet | Still true: real providers are reached only via `manual` (user-mediated) or `official_api` (user's own key), never by automating a consumer site. The M6 compliance gate was resolved 2026-08-25 |
+| Provider/model/account data from `lib/providers/catalog.ts` | PRD §15 — never hard-coded in UI components; sourced from the database and resolved behind the registry |
+| Chat state local to `ChatView` (React state, no Zustand yet) | PRD §46 — avoid unnecessary global state; persistence happens through server actions |
 | Hand-rolled `Popover` primitive | PRD rule 3 — no Radix until a component genuinely needs it |
 | Mock replies clearly labeled, simulated streaming | PRD §34 — never pretend a real provider is streaming; SECURITY.md mock policy |
 | All user reads/writes via anon-key client + RLS | RLS is the access control; service role never used for user data paths |
 | Reference seed data inside the migration | `db push` must seed hosted projects; `seed.sql` only runs on local resets |
 | Messages persist on completion (user at send, assistant at finish/stop) | Mock streaming is client-side; a mid-stream navigation loses only the unfinished mock reply |
-| Search = ILIKE over titles/contents/project names | PRD §38 initial scope; trigram/tsvector indexes can come with M9 if needed |
+| Search = ILIKE over titles/contents/project names | PRD §38 initial scope; backed by `pg_trgm` GIN indexes since M9 (`20260825160000_search_indexes.sql`) |
 | Hand-written `Database` type (type aliases, not interfaces) | supabase-js needs implicit index signatures; `supabase gen types` can replace it later |
 | Adapter streaming = `onChunk` callback + AbortSignal | Matches PRD §25 promise shape while supporting §34 incremental output and §22 stop |
 | Registry built client-side from the catalog | Chat runs in the browser; per-account routing picks mock / official_api / manual behind the same interface |
 | `manual` mode short-circuits in the UI, not the adapter | `sendMessage` cannot model a user-mediated round trip; the handoff panel owns it (PRD §7 manual) |
+| Assistant replies render fenced code only (no full Markdown) | Focused, dependency-free; code is what breaks layout when unrendered. Known gap: headings/lists/emphasis show as plain text |
+| No connected account blocks sending rather than answering with mock text | Simulated replies are for genuine mock mode, not a silent production default |
 | User API keys in browser localStorage only, proxied per request | PRD §19 — nothing credential-like server-side; provider-specific server logic lives only in the proxy route (adapter server-half) |
 | Provider API model ids live in `models.capabilities.api_model`, mirrored in `model-map.ts` | Providers retire ids on their own schedule; a DB value can be refreshed by migration without a deploy, and the mirrored table keeps the app working pre-migration. A test parses the migration and fails on drift |
 | Model id changes ship as new forward-only migrations | Rule 9/15 — committed migrations are never edited; old mappings are archived in `capabilities.deprecated_api_models`, never deleted |
 
 ## Deployment
 
-Production: https://unified-ai-workspace-web.vercel.app (Vercel) + hosted Supabase. Google OAuth and the Supabase connection were verified live on 2026-08-25.
+Production: https://unified-ai-workspace-web.vercel.app (Vercel) + hosted Supabase.
+
+Verified release state (2026-08-27):
+
+- All 10 migrations applied to hosted Supabase (through `20260825210000`); 0 pending.
+- `rls_checks.sql` → `RLS_CHECKS_PASSED | 110 | 110`; `rls_cleanup_check.sql` → `CLEANUP_VERIFIED`; `storage_rls_check.ts` → 9/9 via the Storage API.
+- Verified in the production browser: Google sign-in, conversation create/persist/reload, recents, Claude + ChatGPT manual account connection and handoff, Claude → ChatGPT switching in one Master Conversation, provider/model labels on saved replies, context continuity.
 
 ## Environment
 
@@ -139,6 +151,6 @@ Production: https://unified-ai-workspace-web.vercel.app (Vercel) + hosted Supaba
 ```text
 NEXT_PUBLIC_SUPABASE_URL       Supabase project URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY  public anon key (RLS enforces access)
-SUPABASE_SERVICE_ROLE_KEY      server-only; unused in M1; never expose to client
+SUPABASE_SERVICE_ROLE_KEY      server-only; deliberately unused by all app code paths; never expose to client
 NEXT_PUBLIC_APP_URL            e.g. http://localhost:3000
 ```

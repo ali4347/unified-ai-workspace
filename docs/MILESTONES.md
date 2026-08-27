@@ -13,7 +13,7 @@ Source: [PRD.md §60](PRD.md). One milestone at a time (PRD rules 2, 18). Commit
 | 7 | Second Provider | ✅ Done (2026-08-25) | ChatGPT via the same approved modes; Claude ↔ ChatGPT switching inside one Master Conversation |
 | 8 | Context Handoff | ✅ Done (2026-08-25) | Automatic strategies A–D, deterministic rolling summaries persisted per conversation, context_handoff events |
 | 9 | Production Hardening | ✅ Done (2026-08-25) | Error boundaries, loading skeletons, persist retry, trigram search indexes, unit tests (vitest), PRD §59 security review passed |
-| 10 | Deployment | ✅ Done (2026-08-25) | Pushed to GitHub → Vercel auto-deploy; **operator step open:** apply pending migrations to hosted Supabase (see below) |
+| 10 | Deployment | ✅ Done (2026-08-27) | Vercel auto-deploy from `main`; all 10 migrations applied to hosted Supabase; security suites verified green against production (see below) |
 
 ## Milestone 1 — delivered scope
 
@@ -49,14 +49,14 @@ Acceptance criteria (PRD §55): sign-in/sign-out and route protection are implem
 - Projects: CRUD with custom instructions (PRD §20–21), "New chat in project"
 - Provider/model catalog now database-built (fallback static catalog keeps the app usable pre-migration); accounts come from `connected_accounts` (none until M6)
 - Hand-written typed `Database` schema for supabase-js
-- **Note:** the migration must be applied to the hosted Supabase project (`supabase db push` or SQL Editor) — scheduled with the final deployment step (M10)
+- Applied to the hosted Supabase project on 2026-08-27 via `supabase db push`
 
 ## Milestone 4 — delivered scope
 
 - `packages/provider-core` (`@uaw/provider-core`, TS source via transpilePackages): `AIProviderAdapter` interface (PRD §25) with AbortSignal cancellation + `onChunk` streaming, `ProviderRegistry` (PRD §26, lazy adapter factories), `ProviderAdapterError` + `providerError()` normalized errors (PRD §47), `ProviderEventBus`
 - `MockAdapter`: clearly-labeled simulated replies/streaming (PRD §34); the only adapter — no website-specific automation anywhere (M4 requirement)
 - Web: `lib/providers/registry.ts` builds the registry from the catalog; ChatView sends through `adapter.sendMessage` (stop = abort), `failed` message state, provider events (`provider_switched`, `model_changed`, `request_failed`) persist to `provider_events` via the event bus
-- Integration status stays `disabled` for every real provider pending the M6 gate
+- At M4, integration status stayed `disabled` for every real provider pending the M6 gate (resolved at M6: `manual` + optional `official_api`)
 
 ## Milestone 5 — delivered scope
 
@@ -98,14 +98,19 @@ Acceptance criteria (PRD §55): sign-in/sign-out and route protection are implem
 - Loading states: dashboard + conversation skeletons (`loading.tsx`)
 - Retries: client persistence retries once on transient failure; provider requests surface normalized errors and stay resendable
 - Performance: `pg_trgm` GIN indexes on conversation titles, message contents and project names (ILIKE search); core FK/order indexes shipped with M3
-- Tests: vitest (`pnpm test`) — context handoff strategies/summaries, catalog building/selection, proxy validation/rate limiting (22 tests); proxy validation extracted to a pure module for testability
+- Tests: vitest (`pnpm test`) — context handoff strategies/summaries, catalog building/selection, proxy validation/rate limiting; proxy validation extracted to a pure module for testability. The suite has since grown (model-id drift guard at M-compat, message parsing at release polish) — see the release record below for the current count
 - Security review: PRD §59 checklist walked and recorded in SECURITY.md (all items pass; extension runs zero permissions)
 
 ## Milestone 10 — deployment state
 
 - Code: pushed to GitHub `main` → Vercel builds and deploys https://unified-ai-workspace-web.vercel.app automatically (env vars configured since M1)
 - Hosted database: **all 10 migrations applied** through `20260825210000` (`db push` runs on 2026-08-27; the M1 ledger entry was repaired after its original SQL-Editor apply; zero ownership-chain gaps remain)
-- **Pending verification:** the security suites — `supabase/tests/rls_checks.sql` (database RLS via SQL impersonation, self-rolling-back, 110 assertions) followed by `supabase/tests/rls_cleanup_check.sql` (separate read-only rollback proof), and `supabase/tests/storage_rls_check.ts` (storage authorization via the Storage API with two real user sessions). Storage is intentionally not tested via SQL: Supabase forbids direct DML on storage tables; object mutations go through the Storage API.
+- **Security suites verified green against hosted (2026-08-27):**
+  - `supabase/tests/rls_checks.sql` — database RLS via SQL impersonation → `RLS_CHECKS_PASSED | 110 | 110`
+  - `supabase/tests/rls_cleanup_check.sql` — separate read-only rollback proof → `CLEANUP_VERIFIED`
+  - `supabase/tests/storage_rls_check.ts` — storage authorization via the Storage API with two real user sessions → `Storage authorization checks passed: 9/9`
+  Storage is intentionally not tested via SQL: Supabase forbids direct DML on storage tables; object mutations go through the Storage API.
+- **Verified in production** (manual browser verification, 2026-08-27): Google sign-in, conversation creation and persistence, recent-chats sidebar, Claude and ChatGPT manual account connection, both manual handoff flows, Claude → ChatGPT switching inside one Master Conversation with provider/model labels on saved replies, and context continuity in the thread.
 - Extension ships as a development build only (`pnpm --filter @uaw/extension build` → load `apps/extension/dist` unpacked), per PRD §60 M10
 
 ## Milestone 6 compliance gate (resolved)
@@ -116,4 +121,4 @@ PRD §7 requires every adapter be reviewed against the provider's current terms 
 - `manual` — user-mediated flows with no automation of the provider site, or
 - provider-sanctioned mechanisms if a provider introduces one.
 
-Mock adapters (Milestone 4) power all development and UI work regardless of this decision. This gate must be resolved with the product owner before Milestone 6 implementation.
+Mock adapters (Milestone 4) powered development and UI work up to this point. **The gate was resolved with the product owner on 2026-08-25: `manual` (default) + optional `official_api`.** Both modes shipped for Claude (M6) and ChatGPT (M7).
