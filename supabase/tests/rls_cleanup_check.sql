@@ -149,10 +149,14 @@ begin
   --    confirms the tables are whole).
   -- -------------------------------------------------------------------------
   select count(*) into n from public.providers where slug = 'rogue' or name = 'hijacked';
-  if n <> 0 then raise exception 'CLEANUP FAIL: providers reference data was modified by the suite', n; end if;
+  if n <> 0 then
+    raise exception 'CLEANUP FAIL: % providers reference row(s) were modified by the suite', n;
+  end if;
 
   select count(*) into n from public.models where external_id = 'rogue-model' or name = 'hijacked';
-  if n <> 0 then raise exception 'CLEANUP FAIL: models reference data was modified by the suite', n; end if;
+  if n <> 0 then
+    raise exception 'CLEANUP FAIL: % models reference row(s) were modified by the suite', n;
+  end if;
 
   raise notice 'Cleanup verified: no RLS fixture rows remain.';
 end $$;
