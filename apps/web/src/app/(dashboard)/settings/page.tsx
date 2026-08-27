@@ -127,7 +127,7 @@ export default async function SettingsPage() {
             Appearance settings for this workspace.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex items-center justify-between gap-4">
+        <CardContent className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm font-medium">Theme</p>
           <ThemeToggle />
         </CardContent>

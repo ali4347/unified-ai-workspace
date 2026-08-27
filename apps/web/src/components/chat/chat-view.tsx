@@ -548,7 +548,10 @@ export function ChatView({
         </header>
 
         {saveError && (
-          <p className="mx-auto w-full max-w-3xl px-4 text-xs text-destructive">
+          <p
+            role="alert"
+            className="mx-auto w-full max-w-3xl break-words px-4 text-xs text-destructive"
+          >
             {saveError}
           </p>
         )}

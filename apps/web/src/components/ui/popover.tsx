@@ -111,7 +111,7 @@ export function PopoverContent({
       id={contentId}
       role="menu"
       className={cn(
-        "absolute top-full z-50 mt-1 min-w-56 rounded-lg border bg-popover p-1 text-popover-foreground shadow-md",
+        "absolute top-full z-50 mt-1 min-w-56 max-w-[calc(100vw-1.5rem)] overflow-x-hidden rounded-lg border bg-popover p-1 text-popover-foreground shadow-md",
         align === "start" ? "left-0" : "right-0",
         className
       )}

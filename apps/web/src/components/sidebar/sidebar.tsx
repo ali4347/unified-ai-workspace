@@ -63,7 +63,7 @@ export function Sidebar({
   );
 
   return (
-    <div className="flex h-full w-64 flex-col md:w-full">
+    <div className="flex h-full w-full flex-col">
       {/* Brand + collapse */}
       <div className="flex h-12 items-center justify-between px-3">
         <Link
@@ -107,7 +107,7 @@ export function Sidebar({
         <button
           type="button"
           onClick={() => setSearchOpen(true)}
-          className="mt-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          className="mt-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
         >
           <Search className="size-4" />
           Search
@@ -233,26 +233,26 @@ function ConversationItem({
             }
           }}
           aria-label="Conversation title"
-          className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+          className="min-w-0 flex-1 rounded-sm bg-transparent text-sm outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
         />
         <button
           type="button"
           aria-label="Save title"
-          className="shrink-0 text-sidebar-foreground/70 hover:text-sidebar-foreground"
+          className="shrink-0 rounded p-1.5 text-sidebar-foreground/70 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
           onClick={() => void commitRename()}
         >
-          <Check className="size-3.5" />
+          <Check className="size-4" />
         </button>
         <button
           type="button"
           aria-label="Cancel rename"
-          className="shrink-0 text-sidebar-foreground/70 hover:text-sidebar-foreground"
+          className="shrink-0 rounded p-1.5 text-sidebar-foreground/70 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
           onClick={() => {
             setTitle(conversation.title);
             setRenaming(false);
           }}
         >
-          <X className="size-3.5" />
+          <X className="size-4" />
         </button>
       </li>
     );
@@ -274,31 +274,31 @@ function ConversationItem({
       >
         {conversation.title}
       </Link>
-      <span className="hidden shrink-0 items-center gap-0.5 pr-1 group-hover:flex">
+      <span className="flex shrink-0 items-center gap-0.5 pr-1 md:opacity-0 md:transition-opacity md:focus-within:opacity-100 md:group-hover:opacity-100">
         <button
           type="button"
           aria-label="Rename conversation"
-          className="rounded p-1 text-sidebar-foreground/60 hover:text-sidebar-foreground"
+          className="rounded p-1.5 text-sidebar-foreground/60 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
           onClick={() => setRenaming(true)}
         >
-          <Pencil className="size-3.5" />
+          <Pencil className="size-4" />
         </button>
         <button
           type="button"
           aria-label="Archive conversation"
-          className="rounded p-1 text-sidebar-foreground/60 hover:text-sidebar-foreground"
+          className="rounded p-1.5 text-sidebar-foreground/60 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
           onClick={async () => {
             setBusy(true);
             await archiveConversation(conversation.id);
             onAfterMutate(active);
           }}
         >
-          <Archive className="size-3.5" />
+          <Archive className="size-4" />
         </button>
         <button
           type="button"
           aria-label="Delete conversation"
-          className="rounded p-1 text-sidebar-foreground/60 hover:text-destructive"
+          className="rounded p-1.5 text-sidebar-foreground/60 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
           onClick={async () => {
             if (!window.confirm(`Delete "${conversation.title}"?`)) return;
             setBusy(true);
@@ -306,7 +306,7 @@ function ConversationItem({
             onAfterMutate(active);
           }}
         >
-          <Trash2 className="size-3.5" />
+          <Trash2 className="size-4" />
         </button>
       </span>
     </li>

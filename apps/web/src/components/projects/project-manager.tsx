@@ -111,7 +111,9 @@ function ProjectCard({ project }: Readonly<{ project: ProjectRow }>) {
           <div className="min-w-0">
             <CardTitle className="truncate">{project.name}</CardTitle>
             {project.description && (
-              <CardDescription>{project.description}</CardDescription>
+              <CardDescription className="break-words">
+                {project.description}
+              </CardDescription>
             )}
           </div>
           <div className="flex shrink-0 items-center gap-1">
@@ -154,7 +156,7 @@ function ProjectCard({ project }: Readonly<{ project: ProjectRow }>) {
           New chat in project
         </Link>
         {project.custom_instructions && (
-          <p className="w-full text-xs text-muted-foreground">
+          <p className="w-full break-words text-xs text-muted-foreground">
             Instructions: {project.custom_instructions.slice(0, 200)}
             {project.custom_instructions.length > 200 && "…"}
           </p>
@@ -186,6 +188,9 @@ function ProjectForm({
   );
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
+  // Ids must not be derived from the heading: project names contain spaces and
+  // arbitrary characters, which produce invalid (and colliding) id attributes.
+  const fieldId = React.useId();
 
   return (
     <Card>
@@ -209,9 +214,9 @@ function ProjectForm({
           }}
         >
           <div className="space-y-1.5">
-            <Label htmlFor={`${heading}-name`}>Name</Label>
+            <Label htmlFor={`${fieldId}-name`}>Name</Label>
             <Input
-              id={`${heading}-name`}
+              id={`${fieldId}-name`}
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="RiverLink"
@@ -219,20 +224,20 @@ function ProjectForm({
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor={`${heading}-description`}>Description</Label>
+            <Label htmlFor={`${fieldId}-description`}>Description</Label>
             <Input
-              id={`${heading}-description`}
+              id={`${fieldId}-description`}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What is this project about?"
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor={`${heading}-instructions`}>
+            <Label htmlFor={`${fieldId}-instructions`}>
               Custom instructions
             </Label>
             <textarea
-              id={`${heading}-instructions`}
+              id={`${fieldId}-instructions`}
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
               rows={4}
@@ -242,7 +247,11 @@ function ProjectForm({
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
           <div className="flex items-center gap-2">
             <Button type="submit" size="sm" disabled={busy || !name.trim()}>
               {submitLabel}

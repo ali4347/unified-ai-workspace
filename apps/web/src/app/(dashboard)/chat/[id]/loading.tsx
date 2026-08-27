@@ -1,7 +1,8 @@
 /** Conversation loading state (M9): header + message skeletons. */
 export default function ConversationLoading() {
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div role="status" aria-busy="true" className="flex min-h-0 flex-1 flex-col">
+      <span className="sr-only">Loading conversation…</span>
       <div className="flex h-12 shrink-0 items-center px-4">
         <div className="h-6 w-40 animate-pulse rounded-md bg-muted" />
       </div>

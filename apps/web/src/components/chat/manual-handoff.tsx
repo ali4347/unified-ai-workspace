@@ -63,7 +63,7 @@ export function ManualHandoff({
           value={packageText}
           rows={5}
           aria-label="Context package"
-          className="w-full resize-y rounded-md border bg-muted/30 px-2 py-1.5 font-mono text-xs text-muted-foreground outline-none"
+          className="w-full resize-y rounded-md border bg-muted/30 px-2 py-1.5 font-mono text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
       </div>
 

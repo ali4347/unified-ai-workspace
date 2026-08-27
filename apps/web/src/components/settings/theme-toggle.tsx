@@ -19,16 +19,16 @@ export function ThemeToggle() {
   const { preference, setPreference } = useTheme();
 
   return (
+    // Toggle buttons rather than role="radio": a radiogroup owes users arrow-key
+    // navigation and a roving tabindex, which this control does not implement.
     <div
-      role="radiogroup"
       aria-label="Theme"
-      className="inline-flex items-center gap-1 rounded-lg border p-1"
+      className="inline-flex flex-wrap items-center gap-1 rounded-lg border p-1"
     >
       {OPTIONS.map((option) => (
         <Button
           key={option.value}
-          role="radio"
-          aria-checked={preference === option.value}
+          aria-pressed={preference === option.value}
           variant={preference === option.value ? "secondary" : "ghost"}
           size="sm"
           className="gap-1.5"

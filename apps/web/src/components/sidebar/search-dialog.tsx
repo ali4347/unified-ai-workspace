@@ -55,7 +55,7 @@ export function SearchDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[15vh]"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-[8vh] sm:pt-[15vh]"
       role="dialog"
       aria-modal="true"
       aria-label="Search"
@@ -74,7 +74,7 @@ export function SearchDialog({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search conversations, messages, projects…"
             aria-label="Search query"
-            className="h-11 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            className="h-11 w-full rounded-sm bg-transparent text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
           />
         </div>
         <div className="max-h-80 overflow-y-auto p-2">

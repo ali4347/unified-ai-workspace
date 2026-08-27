@@ -103,7 +103,7 @@ function ProviderSection({
             <button
               type="button"
               aria-label={`Disconnect ${account.email}`}
-              className="shrink-0 rounded p-1 text-muted-foreground hover:text-destructive"
+              className="shrink-0 rounded p-1.5 text-muted-foreground hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onClick={async () => {
                 if (!window.confirm(`Disconnect ${account.email}?`)) return;
                 await disconnectAccount(account.id);
@@ -193,7 +193,7 @@ function ConnectForm({
 
   return (
     <div className="space-y-3 rounded-lg border p-3">
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row">
         <ModeButton
           active={mode === "manual"}
           onClick={() => setMode("manual")}
@@ -243,7 +243,11 @@ function ConnectForm({
         </div>
       )}
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
 
       <div className="flex items-center gap-2">
         <Button size="sm" disabled={busy} onClick={() => void submit()}>
@@ -274,7 +278,7 @@ function ModeButton({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "flex-1 rounded-lg border p-2.5 text-left transition-colors",
+        "flex-1 rounded-lg border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         active ? "border-ring bg-accent/50" : "hover:bg-accent/30"
       )}
     >

@@ -118,8 +118,13 @@ function AssistantMessage({
       <div className="min-w-0">
         <MessageContent content={message.content} />
         {message.status === "streaming" && (
+          <span role="status" className="sr-only">
+            Generating response…
+          </span>
+        )}
+        {message.status === "streaming" && (
           <span
-            aria-label="Generating response"
+            aria-hidden="true"
             className="ml-0.5 inline-block h-4 w-2 animate-pulse rounded-sm bg-foreground/70 align-text-bottom"
           />
         )}
@@ -165,7 +170,7 @@ function CopyButton({ content }: Readonly<{ content: string }>) {
       variant="ghost"
       size="icon"
       aria-label="Copy message"
-      className="size-7 text-muted-foreground opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+      className="size-8 text-muted-foreground transition-opacity md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(content);

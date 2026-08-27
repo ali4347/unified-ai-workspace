@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUp, Paperclip, Square } from "lucide-react";
+import { ArrowUp, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const MAX_HEIGHT_PX = 200;
@@ -62,15 +62,7 @@ export function Composer({
         }}
       />
       <div className="flex items-center justify-between pt-1">
-        <Button
-          variant="ghost"
-          size="icon"
-          disabled
-          aria-label="Attach file (not available yet)"
-          title="File attachments are not available yet"
-        >
-          <Paperclip />
-        </Button>
+        <span />
         {streaming ? (
           <Button size="icon" aria-label="Stop generating" onClick={onStop}>
             <Square />

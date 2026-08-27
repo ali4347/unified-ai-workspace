@@ -33,20 +33,20 @@ export function AiSelector({
   const activeModel = getModel(catalog, selection.providerSlug, selection.modelId);
 
   return (
-    <Popover>
+    <Popover className="min-w-0">
       <PopoverTrigger
         disabled={disabled}
         aria-label="Select AI provider and model"
-        className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex min-w-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <span>
+        <span className="truncate">
           {activeProvider?.meta.name}{" "}
           <span className="text-muted-foreground">{activeModel?.name}</span>
         </span>
         <ChevronDown className="size-4 text-muted-foreground" />
       </PopoverTrigger>
 
-      <PopoverContent className="max-h-96 w-72 overflow-y-auto">
+      <PopoverContent className="max-h-96 w-72 max-w-[calc(100vw-1.5rem)] overflow-y-auto">
         {catalog.map((entry) => (
           <div key={entry.meta.slug} className="py-1">
             <div className="flex items-center gap-2 px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">

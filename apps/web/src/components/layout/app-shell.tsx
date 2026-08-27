@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PanelLeft } from "lucide-react";
 import { Sidebar } from "@/components/sidebar/sidebar";
 import type { ConversationListItem } from "@/lib/db/queries";
@@ -22,9 +22,29 @@ export function AppShell({
 }>) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Escape closes the drawer and returns focus to the control that opened it.
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMobileOpen(false);
+        menuButtonRef.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [mobileOpen]);
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-sm focus:text-primary-foreground"
+      >
+        Skip to main content
+      </a>
       {/* Desktop sidebar */}
       <aside
         className={cn(
@@ -42,9 +62,16 @@ export function AppShell({
 
       {/* Mobile drawer */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-40 md:hidden">
-          <button
-            aria-label="Close sidebar"
+        <div
+          className="fixed inset-0 z-40 md:hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Navigation"
+        >
+          {/* Scrim: decorative, so it is not a tab stop. Escape and the
+              in-drawer collapse control close the drawer. */}
+          <div
+            aria-hidden="true"
             className="absolute inset-0 bg-black/50"
             onClick={() => setMobileOpen(false)}
           />
@@ -70,9 +97,11 @@ export function AppShell({
           )}
         >
           <Button
+            ref={menuButtonRef}
             variant="ghost"
             size="icon"
-            aria-label="Open sidebar"
+            aria-label="Open navigation menu"
+            aria-expanded={mobileOpen}
             className="md:hidden"
             onClick={() => setMobileOpen(true)}
           >
@@ -91,7 +120,7 @@ export function AppShell({
           )}
         </header>
 
-        <main className="flex min-h-0 flex-1 flex-col">{children}</main>
+        <main id="main-content" className="flex min-h-0 flex-1 flex-col">{children}</main>
       </div>
     </div>
   );

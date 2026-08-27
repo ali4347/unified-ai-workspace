@@ -36,7 +36,7 @@ export function AccountSelector({
       <PopoverTrigger
         disabled={disabled}
         aria-label={`Select ${entry.meta.name} account`}
-        className="flex min-w-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex min-w-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
       >
         <CircleUserRound className="size-4 shrink-0" />
         <span className="hidden max-w-40 truncate sm:block">
@@ -45,7 +45,7 @@ export function AccountSelector({
         <ChevronDown className="size-4 shrink-0" />
       </PopoverTrigger>
 
-      <PopoverContent align="end" className="w-64">
+      <PopoverContent align="end" className="w-64 max-w-[calc(100vw-1.5rem)]">
         <div className="px-2 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
           {entry.meta.name} accounts
         </div>
@@ -109,6 +109,9 @@ function AccountRow({
         )}
       />
       <span className="min-w-0 flex-1 truncate">{email}</span>
+      <span className="sr-only">
+        {status === "connected" ? "connected" : `status: ${status}`}
+      </span>
       {mode && (
         <span className="shrink-0 rounded-full border px-1.5 py-px text-[10px] text-muted-foreground">
           {mode === "manual" ? "manual" : "API"}
