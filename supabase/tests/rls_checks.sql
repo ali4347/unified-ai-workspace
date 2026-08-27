@@ -50,7 +50,12 @@
 --     Fixed by 20260825200000; §6b, §7 and §8 assert every chain with
 --     positive controls (own reference and NULL both succeed) so a deny-all
 --     policy cannot go green.
---   Remaining open findings are listed in supabase/tests/README.md → Findings.
+--   * provider_events: account_id/conversation_id unverified on INSERT (rows
+--     are immutable, so INSERT is the only writable path). Fixed by
+--     20260825210000; §11b asserts both chains plus the previously-missing
+--     provider_events isolation matrix.
+--   With this, EVERY mutable FK from a user-owned row into a user-owned
+--   parent is chained — the family is closed (audit in README → Findings).
 -- ===========================================================================
 
 
@@ -867,6 +872,85 @@ begin
   get diagnostics n = row_count;
   perform pg_temp.ok(n = 1,
     'provider_sessions/insert-own-chain: A cannot create a session referencing their OWN account and device — the policy is too strict');
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- §11b provider_events (select/insert/delete own; NO update policy by design —
+--      the event log is append-only) + FK ownership chains (20260825210000).
+--      This table's matrix was missing from the suite until 2026-08-27; a
+--      green run before then said nothing about provider_events.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  a uuid := current_setting('test.uid_a')::uuid;
+  b uuid := current_setting('test.uid_b')::uuid;
+  n integer;
+  blocked boolean;
+begin
+  -- Isolation matrix.
+  select count(*) into n from public.provider_events where id = 'de77de77-0000-4000-8000-000000000a08';
+  perform pg_temp.ok(n = 1, 'provider_events/select-own: A cannot read their own event');
+
+  select count(*) into n from public.provider_events where id = 'de77de77-0000-4000-8000-000000000b08';
+  perform pg_temp.ok(n = 0, 'provider_events/select-other: A can READ B''s event');
+
+  -- Intended behaviour: append-only — even own rows must reject UPDATE.
+  update public.provider_events set event_type = 'rewritten' where id = 'de77de77-0000-4000-8000-000000000a08';
+  get diagnostics n = row_count;
+  perform pg_temp.ok(n = 0, 'provider_events/update-own: the event log must be append-only (no update policy by design)');
+
+  update public.provider_events set event_type = 'hijacked' where id = 'de77de77-0000-4000-8000-000000000b08';
+  get diagnostics n = row_count;
+  perform pg_temp.ok(n = 0, 'provider_events/update-other: A can UPDATE B''s event');
+
+  delete from public.provider_events where id = 'de77de77-0000-4000-8000-000000000a28';
+  get diagnostics n = row_count;
+  perform pg_temp.ok(n = 1, 'provider_events/delete-own: A cannot delete their own event');
+
+  delete from public.provider_events where id = 'de77de77-0000-4000-8000-000000000b08';
+  get diagnostics n = row_count;
+  perform pg_temp.ok(n = 0, 'provider_events/delete-other: A can DELETE B''s event');
+
+  blocked := false;
+  begin
+    insert into public.provider_events (user_id, event_type) values (b, 'spoofed event');
+  exception when insufficient_privilege then blocked := true;
+  end;
+  perform pg_temp.ok(blocked, 'provider_events/insert-as-other: A can INSERT an event owned by B');
+
+  -- FK OWNERSHIP CHAINS (20260825210000): account_id and conversation_id must
+  -- be NULL or belong to the caller. Positive controls first.
+
+  insert into public.provider_events (user_id, event_type, account_id, conversation_id)
+  values (a, 'connected', 'de77de77-0000-4000-8000-000000000a05', 'de77de77-0000-4000-8000-000000000a02');
+  get diagnostics n = row_count;
+  perform pg_temp.ok(n = 1,
+    'provider_events/insert-own-chain: A cannot log an event referencing their OWN account and conversation — the policy is too strict');
+
+  insert into public.provider_events (user_id, event_type, account_id, conversation_id)
+  values (a, 'disconnected', null, null);
+  get diagnostics n = row_count;
+  perform pg_temp.ok(n = 1,
+    'provider_events/insert-null-chain: A cannot log an event with NULL account/conversation — the policy is too strict');
+
+  blocked := false;
+  begin
+    insert into public.provider_events (user_id, event_type, account_id)
+    values (a, 'connected', 'de77de77-0000-4000-8000-000000000b05');
+  exception when insufficient_privilege then blocked := true;
+  end;
+  perform pg_temp.ok(blocked,
+    'provider_events/insert-account-chain: A can LOG an event referencing B''s connected account');
+
+  blocked := false;
+  begin
+    insert into public.provider_events (user_id, event_type, conversation_id)
+    values (a, 'limit_detected', 'de77de77-0000-4000-8000-000000000b02');
+  exception when insufficient_privilege then blocked := true;
+  end;
+  perform pg_temp.ok(blocked,
+    'provider_events/insert-conversation-chain: A can LOG an event referencing B''s conversation');
 end $$;
 
 -- ---------------------------------------------------------------------------
