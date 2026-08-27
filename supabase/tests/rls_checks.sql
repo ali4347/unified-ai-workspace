@@ -28,10 +28,13 @@
 --     `auth.uid()` reads. Policies never join to auth.users, so this is a
 --     faithful simulation. It requires >= 2 existing users and fails loudly
 --     otherwise (see README → "Test identities").
---   * Fixture rows all share the uuid prefix 'de77de77-...' so PART 2 can prove
---     none of them survived the rollback.
---   * PART 2 re-checks every table count against a baseline captured in PART 0
---     to prove production data was untouched.
+--   * Fixture rows all share the uuid prefix 'de77de77-...', and every mutated
+--     value is a deterministic literal, so the companion script
+--     rls_cleanup_check.sql can prove none of them survived the rollback.
+--   * This script depends on NOTHING after its ROLLBACK. It creates no temp
+--     table and no scratch table: the hosted SQL Editor gives no guarantee
+--     that session-local state survives a transaction boundary, so cleanup
+--     verification is a separate, self-contained, read-only query.
 --
 -- A GREEN RUN MEANS: every assertion below passed. The suite prints
 -- "RLS checks passed: N/N" — if the run ends any other way, treat it as a
@@ -69,35 +72,6 @@
 -- ===========================================================================
 
 
--- ===========================================================================
--- PART 0 — baseline snapshot
--- Runs OUTSIDE the test transaction, so the temp table survives the rollback
--- and PART 2 can compare against it.
--- ===========================================================================
-
-drop table if exists _rls_baseline;
-
-create temp table _rls_baseline as
-select
-  (select count(*) from auth.users)                                        as auth_users,
-  (select count(*) from public.profiles)                                   as profiles,
-  (select count(*) from public.connected_accounts)                         as connected_accounts,
-  (select count(*) from public.projects)                                   as projects,
-  (select count(*) from public.conversations)                              as conversations,
-  (select count(*) from public.messages)                                   as messages,
-  (select count(*) from public.attachments)                                as attachments,
-  (select count(*) from public.provider_sessions)                          as provider_sessions,
-  (select count(*) from public.extension_devices)                          as extension_devices,
-  (select count(*) from public.provider_events)                            as provider_events,
-  (select count(*) from public.providers)                                  as providers,
-  (select count(*) from public.models)                                     as models;
-
--- The harness canary (§2) reads this table AFTER `set local role authenticated`,
--- and the owner-created temp table carries no grant for that role. Grant read
--- access explicitly. Session-local by construction: the ACL lives on the temp
--- table itself, so it vanishes with the table (PART 3 drop / session end) and
--- touches nothing persistent.
-grant select on table _rls_baseline to authenticated;
 
 
 -- ===========================================================================
@@ -127,6 +101,36 @@ begin
   perform set_config('test.uid_a', ids[1]::text, true);
   perform set_config('test.uid_b', ids[2]::text, true);
   perform set_config('test.checks', '0', true);
+
+  -- Captured here, as owner, because the `authenticated` role cannot read
+  -- auth.users. Transaction-local GUC — no temp table, nothing to survive the
+  -- rollback (the hosted SQL Editor does not guarantee that it would).
+  perform set_config(
+    'test.auth_users',
+    (select count(*) from auth.users)::text,
+    true
+  );
+end $$;
+
+-- Pre-test counts, for the operator's optional manual comparison against the
+-- same query after the run (see README → "Optional: manual count comparison").
+-- The primary production-untouched guarantee does NOT depend on these: it is
+-- proved by rls_cleanup_check.sql through the absence of every deterministic
+-- fixture identifier, plus the fact that this suite never writes auth.users
+-- and never writes the providers/models reference tables.
+do $$
+begin
+  raise notice 'Pre-test counts — auth.users=%, profiles=%, connected_accounts=%, projects=%, conversations=%, messages=%, attachments=%, provider_sessions=%, extension_devices=%, provider_events=%',
+    (select count(*) from auth.users),
+    (select count(*) from public.profiles),
+    (select count(*) from public.connected_accounts),
+    (select count(*) from public.projects),
+    (select count(*) from public.conversations),
+    (select count(*) from public.messages),
+    (select count(*) from public.attachments),
+    (select count(*) from public.provider_sessions),
+    (select count(*) from public.extension_devices),
+    (select count(*) from public.provider_events);
 end $$;
 
 -- Assertion helper: counts every check so the suite can report N/N, and raises
@@ -260,7 +264,7 @@ declare
   total   integer;
 begin
   select count(*) into visible from public.profiles;
-  select auth_users into total from _rls_baseline;
+  total := current_setting('test.auth_users')::int;
   perform pg_temp.ok(
     visible = 1,
     'harness/canary: user A should see exactly 1 profile under RLS but saw ' || visible ||
@@ -268,7 +272,7 @@ begin
   );
   perform pg_temp.ok(
     total >= 2,
-    'harness/canary: expected >= 2 auth users to borrow, baseline has ' || total
+    'harness/canary: expected >= 2 auth users to borrow, found ' || total
   );
 end $$;
 
@@ -1085,71 +1089,15 @@ declare
 begin
   raise notice '-------------------------------------------------------------';
   raise notice 'RLS checks passed: %/% (all assertions green)', total, total;
-  raise notice 'Rolling back — no fixture row or storage object is retained.';
+  raise notice 'Rolling back — no fixture row is retained.';
+  raise notice 'NEXT: run supabase/tests/rls_cleanup_check.sql as a separate query.';
   raise notice '-------------------------------------------------------------';
 end $$;
 
 rollback;
 
-
 -- ===========================================================================
--- PART 2 — post-rollback verification (requirement: nothing survived)
+-- Nothing follows the ROLLBACK on purpose.
+-- Cleanup verification runs as a SEPARATE query: supabase/tests/rls_cleanup_check.sql
+-- (read-only, self-contained, no temp tables / GUCs / transaction state).
 -- ===========================================================================
-
-do $$
-declare
-  leaked integer;
-  b      _rls_baseline%rowtype;
-begin
-  select * into b from _rls_baseline;
-
-  -- 2a. No fixture row survived. Every fixture uuid starts 'de77de77-'.
-  select
-      (select count(*) from public.connected_accounts where id::text like 'de77de77-%')
-    + (select count(*) from public.projects            where id::text like 'de77de77-%')
-    + (select count(*) from public.conversations       where id::text like 'de77de77-%')
-    + (select count(*) from public.messages            where id::text like 'de77de77-%')
-    + (select count(*) from public.attachments         where id::text like 'de77de77-%')
-    + (select count(*) from public.provider_sessions   where id::text like 'de77de77-%')
-    + (select count(*) from public.extension_devices   where id::text like 'de77de77-%')
-    + (select count(*) from public.provider_events     where id::text like 'de77de77-%')
-    into leaked;
-  if leaked <> 0 then
-    raise exception 'CLEANUP FAIL: % fixture row(s) survived the rollback', leaked;
-  end if;
-
-  -- (2b removed: the suite never writes storage.objects, so there is no
-  --  storage cleanup to verify — the Storage API harness cleans up its own
-  --  objects through the API.)
-
-  -- 2c. No test identity was created — auth.users must be unchanged.
-  if (select count(*) from auth.users) <> b.auth_users then
-    raise exception 'CLEANUP FAIL: auth.users changed (% -> %) — the suite must never create users',
-      b.auth_users, (select count(*) from auth.users);
-  end if;
-
-  -- 2d. Production data untouched: every table back to its baseline count.
-  if (select count(*) from public.profiles)           <> b.profiles
-  or (select count(*) from public.connected_accounts) <> b.connected_accounts
-  or (select count(*) from public.projects)           <> b.projects
-  or (select count(*) from public.conversations)      <> b.conversations
-  or (select count(*) from public.messages)           <> b.messages
-  or (select count(*) from public.attachments)        <> b.attachments
-  or (select count(*) from public.provider_sessions)  <> b.provider_sessions
-  or (select count(*) from public.extension_devices)  <> b.extension_devices
-  or (select count(*) from public.provider_events)    <> b.provider_events
-  or (select count(*) from public.providers)          <> b.providers
-  or (select count(*) from public.models)             <> b.models
-  then
-    raise exception 'CLEANUP FAIL: at least one table count differs from the pre-test baseline';
-  end if;
-
-  raise notice 'Cleanup verified: no fixture rows, auth.users unchanged, all table counts match the pre-test baseline.';
-end $$;
-
-
--- ===========================================================================
--- PART 3 — drop the baseline scratch table
--- ===========================================================================
-
-drop table if exists _rls_baseline;

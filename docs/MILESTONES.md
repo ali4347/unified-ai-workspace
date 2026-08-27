@@ -105,7 +105,7 @@ Acceptance criteria (PRD §55): sign-in/sign-out and route protection are implem
 
 - Code: pushed to GitHub `main` → Vercel builds and deploys https://unified-ai-workspace-web.vercel.app automatically (env vars configured since M1)
 - Hosted database: **all 10 migrations applied** through `20260825210000` (`db push` runs on 2026-08-27; the M1 ledger entry was repaired after its original SQL-Editor apply; zero ownership-chain gaps remain)
-- **Pending verification:** the security suites — `supabase/tests/rls_checks.sql` (database RLS via SQL impersonation, self-rolling-back) and `supabase/tests/storage_rls_check.ts` (storage authorization via the Storage API with two real user sessions). Storage is intentionally not tested via SQL: Supabase forbids direct DML on storage tables; object mutations go through the Storage API.
+- **Pending verification:** the security suites — `supabase/tests/rls_checks.sql` (database RLS via SQL impersonation, self-rolling-back, 110 assertions) followed by `supabase/tests/rls_cleanup_check.sql` (separate read-only rollback proof), and `supabase/tests/storage_rls_check.ts` (storage authorization via the Storage API with two real user sessions). Storage is intentionally not tested via SQL: Supabase forbids direct DML on storage tables; object mutations go through the Storage API.
 - Extension ships as a development build only (`pnpm --filter @uaw/extension build` → load `apps/extension/dist` unpacked), per PRD §60 M10
 
 ## Milestone 6 compliance gate (resolved)

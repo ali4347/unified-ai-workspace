@@ -4,8 +4,11 @@ Two harnesses verify the access-control guarantees the product promises (PRD §3
 
 | Harness | Surface | Mechanism |
 | --- | --- | --- |
-| `rls_checks.sql` | **Database RLS** — every user-owned table + reference tables | SQL impersonation (`request.jwt.claims` + `SET LOCAL ROLE authenticated`), transactional, self-rolling-back |
-| `storage_rls_check.ts` | **Storage authorization** — the private `attachments` bucket | The real Storage API with real user JWTs |
+| `rls_checks.sql` | **Database RLS** — every user-owned table + reference tables | SQL impersonation (`request.jwt.claims` + `SET LOCAL ROLE authenticated`), transactional, self-rolling-back. **110 assertions.** |
+| `rls_cleanup_check.sql` | **Rollback / production-untouched proof** | Separate read-only query run after the suite — no temp tables, no GUCs, no transaction state |
+| `storage_rls_check.ts` | **Storage authorization** — the private `attachments` bucket | The real Storage API with real user JWTs. **9 assertions.** |
+
+**Why cleanup is a separate script:** the hosted SQL Editor gives no guarantee that session-local state survives a transaction boundary — an earlier design captured a baseline in a `TEMP` table before `BEGIN` and read it after `ROLLBACK`, which failed with `42P01: relation "_rls_baseline" does not exist`. The suite now depends on **nothing** after its `ROLLBACK`, and cleanup is proved independently from the live schema.
 
 **Why the split:** Supabase protects storage tables from direct SQL mutation (`Direct deletion from storage tables is not allowed. Use the Storage API instead.`) because Storage metadata and the underlying object store must stay synchronized. Storage schema metadata is therefore treated as **read-only from SQL**, and direct `storage.objects` mutation is intentionally not tested by the SQL suite — it is not a path any real client can take. The SQL suite keeps one read-only check that the four attachments ownership policies exist; everything behavioral goes through the Storage API harness.
 
@@ -30,7 +33,7 @@ The suite prints `RLS checks passed: N/N`. That line only appears if **every** a
 | storage policies (read-only) | the four `attachments_storage_*_own` policies exist on `storage.objects` as migrated — the behavioral matrix lives in `storage_rls_check.ts` |
 | Symmetry | the core isolation checks are repeated as user B, so a green run cannot come from user A simply owning no data |
 | Harness canary | asserts user A sees exactly one profile — if RLS were bypassed (running as owner, missing `FORCE ROW LEVEL SECURITY`), the whole suite would otherwise be a false green |
-| Cleanup | no fixture row survived, `auth.users` unchanged, every table back to its pre-test count (the SQL suite writes no storage objects; the Storage harness cleans its own through the API) |
+| Cleanup | proved by the separate `rls_cleanup_check.sql` (see the hosted flow below): no `de77de77-` fixture row or dangling reference, no `@example.invalid` identity, no mutated test value, reference data intact |
 
 ### Intended asymmetries
 
@@ -60,7 +63,7 @@ set local role authenticated;
 
 **Prerequisite: the project needs at least two auth users.** With fewer, the suite stops immediately with a setup error rather than testing something weaker. Create the second user through normal Supabase Auth (dashboard → Authentication → Add user, or a signup) — never by inserting into `auth.users` by hand.
 
-Everything runs inside one transaction that ends in `ROLLBACK`, so borrowing production identities leaves their data untouched. PART 2 proves this by re-comparing every table count against a baseline captured before the transaction opened.
+Everything runs inside one transaction that ends in `ROLLBACK`, so borrowing production identities leaves their data untouched. `rls_cleanup_check.sql` proves that afterwards, from the live schema, without depending on any state the suite left behind.
 
 ## How to run the SQL suite
 
@@ -70,31 +73,50 @@ The file is plain SQL and needs a session that can `SET ROLE authenticated` (i.e
 
 ```bash
 supabase start
-psql "$(supabase status -o env | grep DB_URL | cut -d= -f2- | tr -d '"')" \
-  -v ON_ERROR_STOP=1 -f supabase/tests/rls_checks.sql
+DB=$(supabase status -o env | grep DB_URL | cut -d= -f2- | tr -d '"')
+psql "$DB" -v ON_ERROR_STOP=1 -f supabase/tests/rls_checks.sql
+psql "$DB" -v ON_ERROR_STOP=1 -f supabase/tests/rls_cleanup_check.sql
 ```
 
 ### Hosted Supabase via psql / DB URL
 
-Get the connection string from **Project Settings → Database → Connection string → URI** (use the session/direct connection, not the transaction pooler — the suite relies on session state and temp tables). Export it rather than pasting it inline so it stays out of your shell history:
+Get the connection string from **Project Settings → Database → Connection string → URI** (use the session/direct connection, not the transaction pooler — the suite relies on `SET LOCAL ROLE` holding for the whole transaction). Export it rather than pasting it inline so it stays out of your shell history:
 
 ```bash
 export SUPABASE_DB_URL='postgresql://postgres:<password>@db.<ref>.supabase.co:5432/postgres'
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/rls_checks.sql
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/rls_cleanup_check.sql
 ```
 
 `ON_ERROR_STOP=1` matters: without it psql keeps going after a failed assertion and the exit code lies.
 
 > The transaction pooler (port 6543) is **not** supported: it may hand statements to different backends, which breaks `SET LOCAL ROLE` and the temp baseline table.
 
-### SQL Editor fallback
+### Hosted Supabase SQL Editor — the standard flow
 
-If you cannot get a direct connection, paste the whole file into the dashboard **SQL Editor** and run it once. It works there because the editor uses a single session.
+Run the two scripts as **two separate queries**, in order:
 
-Two caveats:
+| Step | Action | Expect |
+| --- | --- | --- |
+| 1 | Run `rls_checks.sql` whole | — |
+| 2 | Confirm the Notices pane shows **`RLS checks passed: 110/110`** | any other ending is a failure |
+| 3 | Run `rls_cleanup_check.sql` as a **new query** | — |
+| 4 | Confirm **`Cleanup verified: no RLS fixture rows remain.`** | plus post-test counts |
+| 5 | Later, separately, run `storage_rls_check.ts` for storage authorization | `Storage authorization checks passed: 9/9` |
 
-- Read the **Notices** pane, not just the results grid. The pass line (`RLS checks passed: N/N`), the cleanup confirmation and the `FINDING …` probe are all `RAISE NOTICE` output.
-- Run the file whole. Executing only a highlighted fragment can leave the `begin;` open or skip the `rollback;`.
+Step 3 must be a fresh query, not appended to step 1: the suite ends at `ROLLBACK` and deliberately leaves no session state behind.
+
+#### Optional: manual count comparison
+
+Step 1 emits a `Pre-test counts — …` notice and step 3 emits a matching `Post-test counts — …` notice. The production-untouched guarantee does not depend on them (see below), but comparing the two lines gives an explicit numeric confirmation if you want one.
+
+The primary guarantee is stronger than counts: `rls_cleanup_check.sql` proves the absence of **every deterministic fixture identifier** — the `de77de77-` uuid prefix across all eight seeded tables, dangling `de77de77-` references in mutable FK columns, the reserved `@example.invalid` marker addresses, and the fixed vocabulary of literals the UPDATE assertions write (`hijacked`, `A renamed`, `A edited`, `rewritten`, …). That last group matters because an in-place UPDATE changes no row count, so counts alone could not detect it. Combined with the facts that the suite never writes `auth.users` and never writes the `providers`/`models` reference tables, that establishes the guarantee without any pre-test snapshot needing to survive the rollback.
+
+### SQL Editor notes
+
+- Read the **Notices** pane, not just the results grid. Both success lines (`RLS checks passed: 110/110`, `Cleanup verified: no RLS fixture rows remain.`) and the count notices are all `RAISE NOTICE` output.
+- Run each file **whole**. Executing only a highlighted fragment can leave the `begin;` open or skip the `rollback;`.
+- Do not rely on session state between the two scripts — by design there is none.
 
 ## Storage authorization harness (`storage_rls_check.ts`)
 
